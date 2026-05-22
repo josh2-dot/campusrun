@@ -1,0 +1,265 @@
+@import url('https://fonts.googleapis.com/css2?family=Rubik+Glitch&family=Syne:wght@700;800&family=Nunito:wght@400;500;600;700;800;900&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────
+   DESIGN TOKENS — single source of truth
+───────────────────────────────────────── */
+:root {
+  /* Dark (customer app) */
+  --bg-0: #0C0B09;   /* page */
+  --bg-1: #1A1917;   /* card */
+  --bg-2: #26241F;   /* card hover / nested */
+  --line: #2A2825;
+  --line-2: #1F1D1B;
+
+  --ink: #FFFFFF;
+  --ink-2: #A09A8E;
+  --ink-3: #6B6660;
+  --ink-4: #444038;
+
+  /* Light (runner / receipt) */
+  --light-bg: #F7F4EF;
+  --light-bg-2: #ECE7DF;
+  --light-card: #FFFFFF;
+  --light-line: #E0DACE;
+  --light-ink: #15130F;
+  --light-ink-2: #4A463F;
+  --light-ink-3: #8B857B;
+
+  /* Brand */
+  --accent: #FF6B2B;
+  --accent-dim: #1A0D00;
+
+  /* Semantic ramp */
+  --ok: #1DB954;
+  --ok-dim: #001A0D;
+  --warn: #FFB800;
+  --warn-dim: #1A1600;
+  --info: #4A9EFF;
+  --info-dim: #001A2A;
+  --danger: #FF3B30;
+  --danger-dim: #2A0A0A;
+
+  /* Radii (locked: 8 / 12 / 16 / 24) */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+
+  /* Type weights (use these, not raw numbers) */
+  --w-body: 500;
+  --w-meta: 600;
+  --w-label: 700;
+  --w-emph: 800;
+  --w-hero: 900;
+}
+
+/* ── BASE ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: 'Nunito', system-ui, sans-serif;
+  font-weight: var(--w-body);
+  background: var(--bg-0);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── FONTS ── */
+.font-brand   { font-family: 'Rubik Glitch', cursive; }
+.font-display { font-family: 'Syne', sans-serif; font-weight: 800; letter-spacing: -0.01em; }
+.font-body    { font-family: 'Nunito', sans-serif; }
+.font-mono    { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+
+/* ─────────────────────────────────────────
+   KEYFRAMES — keep glitch for wordmark only
+───────────────────────────────────────── */
+@keyframes jitter-idle {
+  0%, 80%, 100% { transform: translate(0, 0) skew(0deg); }
+  82%  { transform: translate(-2px,  1px) skew(-0.5deg); }
+  84%  { transform: translate( 2px, -1px) skew( 0.5deg); }
+  86%  { transform: translate(-1px,  2px) skew(-0.3deg); }
+  88%  { transform: translate( 1px, -2px) skew( 0.3deg); }
+  90%  { transform: translate(-2px,  0px) skew(-0.5deg); }
+  92%  { transform: translate( 2px,  1px) skew( 0.5deg); }
+  94%  { transform: translate(0, 0)       skew(0deg);    }
+}
+@keyframes jitter-hover {
+  0%,100% { transform: translate(0,0) rotate(0deg); }
+  10%     { transform: translate(-2px, 1px) rotate(-0.5deg); }
+  30%     { transform: translate(-1px, 2px) rotate( 0deg);   }
+  50%     { transform: translate(-2px, 0px) rotate( 0.3deg); }
+  70%     { transform: translate(-1px,-1px) rotate( 0.5deg); }
+  90%     { transform: translate(-2px,-1px) rotate(-0.3deg); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes scanline {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+@keyframes ping-orange {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,107,43,0.45); }
+  50%     { box-shadow: 0 0 0 9px rgba(255,107,43,0);   }
+}
+@keyframes glitch-clip {
+  0%   { clip-path: inset(0 0 95% 0);   transform: translate(-3px, 0); }
+  20%  { clip-path: inset(60% 0 20% 0); transform: translate(-2px, 0); }
+  40%  { clip-path: inset(10% 0 70% 0); transform: translate(-3px, 0); }
+  60%  { clip-path: inset(20% 0 60% 0); transform: translate(-1px, 0); }
+  80%  { clip-path: inset(40% 0 40% 0); transform: translate(-2px, 0); }
+  100% { clip-path: inset(0 0 95% 0);   transform: translate( 0,   0); }
+}
+@keyframes timer-ring {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: var(--ring-length, 100); }
+}
+
+/* ─────────────────────────────────────────
+   ANIMATION UTILITIES — glitch reserved
+───────────────────────────────────────── */
+
+/* Wordmark logo only */
+.jitter {
+  display: inline-block;
+  animation: jitter-idle 5s steps(1) infinite;
+}
+.jitter:hover { animation: jitter-hover 0.2s steps(1) infinite; }
+
+/* Was used everywhere — now demoted to calm press feedback.
+   Keep class name to avoid breaking older pages. */
+.jitter-btn { transition: transform 0.12s ease; }
+.jitter-btn:active { transform: scale(0.97); }
+.jitter-btn:hover { animation: none; }   /* explicit override */
+
+/* New canonical press utility */
+.press { transition: transform 0.12s ease; }
+.press:active { transform: scale(0.97); }
+
+/* Toggle online pulse */
+.pulse-orange { animation: ping-orange 1.5s ease infinite; }
+
+/* Glitch wordmark layers */
+.glitch { position: relative; display: inline-block; }
+.glitch::before,
+.glitch::after {
+  content: attr(data-text);
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+.glitch::before { color: var(--accent); animation: glitch-clip 4s steps(1) infinite; opacity: 0.7; }
+.glitch::after  { color: #00FFFF; animation: glitch-clip 4s steps(1) infinite reverse; opacity: 0.4; }
+
+/* Fade-up stagger */
+.fade-up   { opacity: 0; animation: fadeUp 0.4s ease         forwards; }
+.fade-up-1 { opacity: 0; animation: fadeUp 0.4s ease 0.08s   forwards; }
+.fade-up-2 { opacity: 0; animation: fadeUp 0.4s ease 0.16s   forwards; }
+.fade-up-3 { opacity: 0; animation: fadeUp 0.4s ease 0.24s   forwards; }
+.fade-up-4 { opacity: 0; animation: fadeUp 0.4s ease 0.32s   forwards; }
+.fade-up-5 { opacity: 0; animation: fadeUp 0.4s ease 0.40s   forwards; }
+
+/* ─────────────────────────────────────────
+   SURFACE / TEXTURE PATTERNS
+───────────────────────────────────────── */
+
+/* Original dot texture, retuned dot color for new palette */
+.dot-texture {
+  background-image: radial-gradient(circle, #1F1D1A 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+}
+
+/* Striped placeholder — used for restaurant banners */
+.stripe-placeholder {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--bg-2) 0 8px,
+    var(--line-2) 8px 16px
+  );
+}
+.stripe-placeholder-soft {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--bg-2) 0 6px,
+    var(--bg-1) 6px 12px
+  );
+}
+
+/* Scan line overlay */
+.scanline::after {
+  content: '';
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: rgba(255,107,43,0.07);
+  animation: scanline 6s linear infinite;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ─────────────────────────────────────────
+   STATUS PILLS — one shape, semantic colors
+───────────────────────────────────────── */
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font: var(--w-emph) 10px/1 'Nunito', sans-serif;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.pill-ok     { background: var(--ok-dim);     color: var(--ok);     border-color: rgba(29,185,84,0.25); }
+.pill-warn   { background: var(--warn-dim);   color: var(--warn);   border-color: rgba(255,184,0,0.25); }
+.pill-info   { background: var(--info-dim);   color: var(--info);   border-color: rgba(74,158,255,0.25); }
+.pill-danger { background: var(--danger-dim); color: var(--danger); border-color: rgba(255,59,48,0.25); }
+.pill-accent { background: var(--accent-dim); color: var(--accent); border-color: rgba(255,107,43,0.25); }
+.pill-mute   { background: var(--bg-1);       color: var(--ink-2);  border-color: var(--line); }
+
+/* Mono caps (label) */
+.label-cap {
+  font: var(--w-label) 11px/1 ui-monospace, 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+/* ─────────────────────────────────────────
+   UTILITY
+───────────────────────────────────────── */
+.scroll-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scroll-hide::-webkit-scrollbar { display: none; }
+
+.mobile-container {
+  max-width: 430px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  background: var(--bg-0);
+  position: relative;
+}
+
+/* Edge-fade for horizontally scrollable chip rows */
+.h-fade-right { position: relative; }
+.h-fade-right::after {
+  content: '';
+  position: absolute; right: 0; top: 0; bottom: 0; width: 24px;
+  background: linear-gradient(to left, var(--bg-0), transparent);
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────
+   REDUCED MOTION
+───────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .jitter, .jitter:hover, .jitter-btn:hover,
+  .pulse-orange, .glitch::before, .glitch::after,
+  .scanline::after {
+    animation: none;
+  }
+  .fade-up, .fade-up-1, .fade-up-2, .fade-up-3, .fade-up-4, .fade-up-5 {
+    opacity: 1;
+    animation: none;
+  }
+}

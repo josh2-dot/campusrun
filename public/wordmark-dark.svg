@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 64" width="480" height="64" role="img">
+  <title>CampusRun — wordmark dark</title>
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Rubik+Glitch&amp;display=swap');
+      .brand { font-family: 'Rubik Glitch', cursive; font-size: 38px; }
+    </style>
+  </defs>
+  <path d="M24 4 C13 4 6 12 6 20.5 C6 32 17 44.5 22 50 C23.1 51.4 24.9 51.4 26 50 C31 44.5 42 32 42 20.5 C42 12 35 4 24 4 Z" fill="#FF5500"/>
+  <polygon points="27,10 18,25 23,25 17,40 31,23 25.5,23" fill="white"/>
+  <text x="56" y="47" class="brand" fill="#FF5500">Campus</text>
+  <text x="282" y="47" class="brand" fill="white">Run</text>
+</svg>

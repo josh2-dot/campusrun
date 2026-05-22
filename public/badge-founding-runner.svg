@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 56" width="240" height="56" role="img">
+  <title>CampusRun — Founding Runner badge</title>
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Syne:wght@800&amp;display=swap');
+      .badge-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; }
+      .badge-sub   { font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+    </style>
+  </defs>
+  <rect width="240" height="56" rx="28" fill="#0C0B09"/>
+  <path d="M28 8 C20 8 14 13.5 14 19.5 C14 27 21 35 24.5 39 C25.3 40 26.7 40 27.5 39 C31 35 38 27 38 19.5 C38 13.5 36 8 28 8 Z" fill="#FF5500"/>
+  <polygon points="30.5,12 24,22.5 27.5,22.5 22.5,33 33,21 29,21" fill="white"/>
+  <text x="50" y="23" class="badge-sub" fill="rgba(255,255,255,0.45)">CAMPUSRUN</text>
+  <text x="50" y="41" class="badge-title" fill="#FFD000">Founding Runner</text>
+</svg>

@@ -1,0 +1,37 @@
+{
+  "name": "CampusRun",
+  "short_name": "CampusRun",
+  "description": "Campus food delivery by fellow students",
+  "start_url": "/home",
+  "display": "standalone",
+  "background_color": "#FF6B2B",
+  "theme_color": "#FF6B2B",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["food", "shopping"],
+  "shortcuts": [
+    {
+      "name": "Order Food",
+      "url": "/home",
+      "description": "Browse restaurants and order"
+    },
+    {
+      "name": "Runner Dashboard",
+      "url": "/dashboard",
+      "description": "Go online and accept orders"
+    }
+  ]
+}

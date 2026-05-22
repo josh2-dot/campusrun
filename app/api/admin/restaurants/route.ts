@@ -43,6 +43,11 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Menu item actions ────────────────────────────────────
+  if (action === 'toggle_featured') {
+    await admin.from('menu_items').update({ is_featured: value }).eq('id', id)
+    return NextResponse.json({ success: true })
+  }
+
   if (action === 'toggle_item') {
     await admin.from('menu_items').update({ is_available: value }).eq('id', id)
     return NextResponse.json({ success: true })

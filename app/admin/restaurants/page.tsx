@@ -369,6 +369,9 @@ export default function AdminRestaurantsPage() {
                                       PORTIONS
                                     </span>
                                   )}
+                                  {item.is_featured && (
+                                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 900, color: '#FFB800' }}>★</span>
+                                  )}
                                 </p>
                                 {/* Price input */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
@@ -391,6 +394,21 @@ export default function AdminRestaurantsPage() {
                                   style={{ background: item.is_available ? 'rgba(29,185,84,0.1)' : 'rgba(255,59,48,0.1)', border: 'none', color: item.is_available ? 'var(--ok, #1DB954)' : 'var(--danger, #FF3B30)', fontSize: 11, fontWeight: 800, padding: '5px 8px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', opacity: saving === item.id ? 0.5 : 1 }}
                                 >
                                   {saving === item.id ? '...' : item.is_available ? 'ON' : 'OFF'}
+                                </button>
+                                {/* Star / featured toggle */}
+                                <button
+                                  onClick={async () => {
+                                    setSaving(item.id)
+                                    await api('toggle_featured', item.id, !item.is_featured)
+                                    await load()
+                                    setSaving(null)
+                                  }}
+                                  disabled={saving === item.id}
+                                  title={item.is_featured ? 'Remove from featured' : 'Feature this dish'}
+                                  className="press"
+                                  style={{ background: item.is_featured ? 'rgba(255,184,0,0.15)' : 'var(--bg-0, #0C0B09)', border: `1px solid ${item.is_featured ? 'rgba(255,184,0,0.4)' : 'var(--line, #2A2825)'}`, color: item.is_featured ? '#FFB800' : 'var(--ink-3, #6B6660)', fontSize: 13, padding: '4px 8px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', opacity: saving === item.id ? 0.5 : 1 }}
+                                >
+                                  ★
                                 </button>
                                 {/* Portions toggle */}
                                 <button

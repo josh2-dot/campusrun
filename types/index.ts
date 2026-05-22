@@ -47,6 +47,7 @@ export interface MenuItem {
   image_url?: string
   category: string
   is_available: boolean
+  is_featured?:  boolean
   // Portion pricing — only set on applicable items (rice, spaghetti etc)
     has_portions?:       boolean
     portion_min_price?:  number
@@ -114,6 +115,7 @@ export interface Payment {
 export interface RunnerProfile {
   user_id: string
   is_available: boolean
+  is_featured?:  boolean
   total_deliveries: number
   total_earnings: number
   bank_name?: string

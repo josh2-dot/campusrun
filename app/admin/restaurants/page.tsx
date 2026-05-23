@@ -357,10 +357,36 @@ export default function AdminRestaurantsPage() {
                           <div key={item.id} style={{ background: 'var(--bg-0, #0C0B09)', borderRadius: 12, padding: '10px 12px', marginBottom: 8, border: `1px solid ${item.is_available ? 'var(--line, #2A2825)' : 'rgba(255,59,48,0.2)'}` }}>
                             {/* Item main row */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              {item.image_url && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={item.image_url} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-                              )}
+                              {/* Image — tap to upload/replace */}
+                              <label style={{ width: 40, height: 40, borderRadius: 10, border: `1.5px dashed ${item.image_url ? 'transparent' : 'var(--line, #2A2825)'}`, flexShrink: 0, cursor: 'pointer', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-1, #1A1917)' }}>
+                                {item.image_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={item.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                ) : (
+                                  <span style={{ fontSize: 18, opacity: 0.4 }}>📷</span>
+                                )}
+                                {/* Overlay on hover */}
+                                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0 }} onMouseEnter={e => (e.currentTarget.style.opacity = '1')} onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>
+                                  <span style={{ fontSize: 14 }}>✏️</span>
+                                </div>
+                                <input type="file" accept="image/*" style={{ display: 'none' }}
+                                  onChange={async e => {
+                                    const file = e.target.files?.[0]
+                                    if (!file) return
+                                    if (file.size > 2 * 1024 * 1024) { alert('Image must be under 2MB'); return }
+                                    setSaving(item.id)
+                                    const fd = new FormData()
+                                    fd.append('file', file)
+                                    fd.append('itemId', item.id)
+                                    const res = await fetch('/api/admin/upload-image', { method: 'POST', body: fd })
+                                    const { error } = await res.json()
+                                    if (error) alert(error)
+                                    await load()
+                                    setSaving(null)
+                                    e.target.value = ''
+                                  }}
+                                />
+                              </label>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <p style={{ fontWeight: 700, fontSize: 13, color: item.is_available ? 'white' : 'var(--ink-3, #6B6660)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {item.name}

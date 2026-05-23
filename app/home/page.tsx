@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { initPush } from '@/lib/push'
 import { monogram } from '@/lib/utils'
 import { BottomNav } from '@/components/ui/BottomNav'
+import { InstallPrompt } from '@/components/ui/InstallPrompt'
 import type { Restaurant, MenuItem, Order } from '@/types'
 import { Search, ShoppingBag, X } from 'lucide-react'
 import { useCartStore, getFavorites, toggleFavorite } from '@/store/cart'
@@ -29,7 +30,6 @@ export default function HomePage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [favIds, setFavIds] = useState<string[]>([])
   const [fullyBooked, setFullyBooked] = useState(false)
-  const [featuredItems, setFeaturedItems] = useState<(MenuItem & { restaurant_name?: string; restaurant_id?: string })[]>([])
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -105,14 +105,6 @@ export default function HomePage() {
         (items ?? [])
           .map(item => ({ item, restaurant: restMap[item.restaurant_id] }))
           .filter(r => r.restaurant)
-      )
-
-      // Featured dishes — reuses restMap already built above
-      setFeaturedItems(
-        (items ?? [])
-          .filter(i => i.is_featured && i.is_available)
-          .slice(0, 6)
-          .map(i => ({ ...i, restaurant_name: restMap[i.restaurant_id]?.name }))
       )
 
       setLoading(false)
@@ -304,47 +296,6 @@ export default function HomePage() {
           </>
         ) : (
           <>
-            {/* ── Featured dishes ── */}
-            {featuredItems.length > 0 && (
-              <div style={{ marginBottom: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-                  <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', fontSize: 10, margin: 0 }}>Popular dishes</p>
-                  <span style={{ fontSize: 10, color: 'var(--accent, #FF6B2B)', fontWeight: 800 }}>{featuredItems.length} dish{featuredItems.length !== 1 ? 'es' : ''}</span>
-                </div>
-                <div className="scroll-hide" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
-                  {featuredItems.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => router.push(`/restaurant/${item.restaurant_id}`)}
-                      className="press"
-                      style={{ flexShrink: 0, width: 148, background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 16, overflow: 'hidden', cursor: 'pointer', fontFamily: 'inherit', padding: 0, textAlign: 'left' as const }}
-                    >
-                      {/* Image */}
-                      <div style={{ width: '100%', height: 96, background: 'var(--bg-2, #26241F)', position: 'relative', overflow: 'hidden' }}>
-                        {item.image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.image_url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                        ) : (
-                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <span style={{ fontSize: 36 }}>🍽️</span>
-                          </div>
-                        )}
-                        {/* Price pill */}
-                        <div style={{ position: 'absolute', bottom: 7, left: 7, background: 'rgba(12,11,9,0.85)', borderRadius: 20, padding: '3px 8px', backdropFilter: 'blur(4px)' }}>
-                          <span className="font-display" style={{ fontSize: 12, color: 'white' }}>₦{item.price.toLocaleString()}</span>
-                        </div>
-                      </div>
-                      {/* Info */}
-                      <div style={{ padding: '10px 10px 12px' }}>
-                        <p style={{ fontWeight: 800, fontSize: 13, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</p>
-                        <p style={{ fontSize: 11, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '3px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.restaurant_name ?? ''}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Fully booked banner */}
             {fullyBooked && (
               <div style={{ background: 'rgba(255,107,43,0.08)', border: '1px solid rgba(255,107,43,0.25)', borderRadius: 14, padding: '14px 16px', marginBottom: 14 }}>
@@ -418,6 +369,7 @@ export default function HomePage() {
           </button>
         </div>
       )}
+      <InstallPrompt />
       <BottomNav active="home" />
     </div>
   )

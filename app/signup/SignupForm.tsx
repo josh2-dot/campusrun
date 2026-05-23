@@ -59,7 +59,20 @@ export default function SignupForm() {
     setLoading(true); setError('')
 
     // Step 1: create auth user
-    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password })
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name:     fullName,
+          phone:         phone,
+          role:          role,
+          matric_number: role === 'runner' ? matricNumber.trim() : null,
+        },
+        // Redirect to verified page so user sees confirmation success
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/verified`,
+      },
+    })
     if (authError) {
       setError(friendlySignupError(authError.message))
       setLoading(false); submitting.current = false; return

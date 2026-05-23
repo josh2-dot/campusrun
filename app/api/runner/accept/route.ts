@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await admin
     .from('orders')
-    .update({ runner_id: user.id, status: 'runner_assigned' })
+    .update({ runner_id: user.id, status: 'runner_assigned', runner_assigned_at: new Date().toISOString() })
     .eq('id', orderId)
     .is('runner_id', null)
     .in('status', ['awaiting_runner', 'confirmed'])

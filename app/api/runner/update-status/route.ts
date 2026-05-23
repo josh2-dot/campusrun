@@ -1,4 +1,4 @@
-// app/api/runner/update-status/route.ts
+﻿// app/api/runner/update-status/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/send-push'
@@ -22,7 +22,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Cannot mark as picked up from status: ${order.status}` }, { status: 409 })
   }
 
-  const { data: updated, error } = await admin.from('orders').update({ status: 'picked_up' }).eq('id', orderId).select().single()
+ 
+  const { data: updated, error } = await admin.from('orders').update({ status: 'picked_up', picked_up_at: new Date().toISOString() }).eq('id', orderId).select().single()
   if (error || !updated) return NextResponse.json({ error: 'Failed to update order' }, { status: 500 })
 
   // Push to customer: food picked up

@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   if (order.status !== 'picked_up') return NextResponse.json({ error: 'Order must be picked up before confirming delivery' }, { status: 409 })
   if (code.trim() !== order.delivery_code) return NextResponse.json({ success: false, error: 'Wrong code. Ask the customer to check their tracking page.' }, { status: 422 })
 
-  const { data: updated, error } = await admin.from('orders').update({ status: 'delivered' }).eq('id', orderId).select().single()
+  const { data: updated, error } = await admin.from('orders').update({ status: 'delivered', delivered_at: new Date().toISOString() }).eq('id', orderId).select().single()
   if (error || !updated) return NextResponse.json({ error: 'Failed to confirm delivery' }, { status: 500 })
 
   // Push to customer: delivered

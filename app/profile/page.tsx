@@ -26,6 +26,7 @@ export default function ProfilePage() {
 const { lastAddress } = useCartStore()
 
   const [user, setUser] = useState<ProfileUser | null>(null)
+  const [showShare, setShowShare] = useState(false)
   const [runnerAppStatus, setRunnerAppStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
@@ -262,6 +263,24 @@ const { lastAddress } = useCartStore()
           </a>
         </div>
 
+
+        {/* ── SHARE THE APP ── */}
+        <button
+          onClick={() => setShowShare(true)}
+          className="press"
+          style={{ width: '100%', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 16, padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}
+        >
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--accent, #FF6B2B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🎁</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontWeight: 800, fontSize: 14, color: 'white', margin: 0 }}>Share CampusRun</p>
+            <p style={{ fontSize: 12, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '2px 0 0' }}>Tell your friends — they'll thank you</p>
+          </div>
+          <span style={{ color: 'var(--ink-3, #6B6660)', fontSize: 18 }}>›</span>
+        </button>
+
+        {/* ── SHARE SHEET ── */}
+        {showShare && <ShareSheet onClose={() => setShowShare(false)} userName={user?.full_name} />}
+
         {/* ── HOW IT WORKS ── */}
         <button
           onClick={() => router.push('/onboarding')}
@@ -283,6 +302,93 @@ const { lastAddress } = useCartStore()
       </div>
 
       <BottomNav active="profile" />
+    </div>
+  )
+}
+
+// ── Share sheet ───────────────────────────────────────────────
+function ShareSheet({ onClose, userName }: { onClose: () => void; userName?: string }) {
+  const url       = 'https://campusrun.food'
+  const shareText = `Order food from campus restaurants, no queue. Try CampusRun: ${url}`
+  // QR via free API — no library needed
+  const qrUrl     = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(url)}&color=0C0B09&bgcolor=FFFFFF&margin=8`
+
+  const [copied,  setCopied]  = useState(false)
+  const [sharing, setSharing] = useState(false)
+
+  async function handleNativeShare() {
+    if (sharing) return
+    setSharing(true)
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'CampusRun', text: shareText, url })
+      } else {
+        await navigator.clipboard.writeText(shareText)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    } catch { /* user cancelled */ }
+    setSharing(false)
+  }
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleWhatsApp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
+  }
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', maxWidth: 430, margin: '0 auto', animation: 'fadeIn 0.2s ease' }}
+    >
+      <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } } @keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }`}</style>
+      <div style={{ width: '100%', background: 'var(--bg-1, #1A1917)', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: '14px 24px 36px', border: '1px solid var(--line, #2A2825)', borderBottom: 'none', animation: 'slideUp 0.25s ease', fontFamily: "'Nunito', system-ui, sans-serif" }}>
+
+        {/* Handle */}
+        <div style={{ width: 36, height: 4, background: 'var(--line, #2A2825)', borderRadius: 2, margin: '0 auto 18px' }} />
+
+        {/* Header */}
+        <p className="label-cap" style={{ color: 'var(--accent, #FF6B2B)', fontSize: 10, margin: '0 0 6px' }}>Share CampusRun</p>
+        <h2 className="font-display" style={{ fontSize: 22, color: 'white', margin: '0 0 6px' }}>Spread the word</h2>
+        <p style={{ fontSize: 13, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '0 0 20px' }}>
+          {userName ? `Help your friends discover the easiest way to order food on campus.` : 'Help your friends discover CampusRun.'}
+        </p>
+
+        {/* QR card */}
+        <div style={{ background: 'white', borderRadius: 18, padding: 16, marginBottom: 14, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrUrl} alt="CampusRun QR code" width={200} height={200} style={{ display: 'block', borderRadius: 8 }} />
+          <p style={{ fontSize: 11, color: '#6B6660', fontWeight: 800, margin: '10px 0 0', letterSpacing: '0.1em', textTransform: 'uppercase' }}>SCAN OR VISIT</p>
+          <p className="font-display" style={{ fontSize: 18, color: '#0C0B09', margin: '2px 0 0' }}>campusrun.food</p>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <button onClick={handleWhatsApp} className="press"
+            style={{ background: 'rgba(29,185,84,0.1)', border: '1px solid rgba(29,185,84,0.25)', color: 'var(--ok, #1DB954)', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            💬 WhatsApp
+          </button>
+          <button onClick={handleNativeShare} disabled={sharing} className="press"
+            style={{ background: 'var(--bg-2, #26241F)', border: '1px solid var(--line, #2A2825)', color: 'white', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, cursor: sharing ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: sharing ? 0.6 : 1 }}>
+            ↗ More apps
+          </button>
+        </div>
+
+        <button onClick={handleCopy} className="press"
+          style={{ width: '100%', background: 'transparent', border: '1px solid var(--line, #2A2825)', color: copied ? 'var(--ok, #1DB954)' : 'var(--ink-2, #A09A8E)', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 }}>
+          {copied ? '✓ Link copied' : '📋 Copy link'}
+        </button>
+
+        <button onClick={onClose}
+          style={{ width: '100%', background: 'transparent', border: 'none', color: 'var(--ink-3, #6B6660)', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0' }}>
+          Close
+        </button>
+      </div>
     </div>
   )
 }

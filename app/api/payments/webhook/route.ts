@@ -88,8 +88,14 @@ async function triggerAutoAllocation(orderId: string, supabase: ReturnType<typeo
     .eq('is_available', true)
 
   if (!runners?.length) {
-    await supabase.from('orders').update({ status: 'needs_attention', broadcast_count: 1 }).eq('id', orderId)
-    await sendSMS(process.env.ADMIN_PHONE!, `\u26A0\uFE0F CampusRun ALERT: Order ${order.order_ref} has no runners. Manual assignment needed.`)
+    // No runners online — set awaiting_runner so watchdog retries when one comes online.
+    // Customer sees 'Finding your runner' not an error state.
+    await supabase.from('orders').update({
+      status:          'awaiting_runner',
+      broadcast_at:    new Date().toISOString(),
+      broadcast_count: 1,
+    }).eq('id', orderId)
+    await sendSMS(process.env.ADMIN_PHONE!, `\u26A0\uFE0F CampusRun: Order ${order.order_ref} confirmed but no runners online. Watchdog will retry.`)
     return
   }
 

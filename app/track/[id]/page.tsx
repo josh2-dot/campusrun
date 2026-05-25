@@ -27,7 +27,7 @@ function statusToStep(status: string): number {
 function statusLabel(s: string) {
   if (s === 'delivered')                              return 'Delivered!'
   if (s === 'cancelled')                             return 'Cancelled'
-  if (s === 'needs_attention')                       return 'Issue with order'
+  if (s === 'needs_attention')                       return 'Finding runner'
   if (s === 'awaiting_runner')                       return 'Finding a runner…'
   if (s === 'runner_assigned' || s === 'preparing') return 'Runner is on it'
   if (s === 'picked_up')                             return 'Out for delivery'
@@ -301,8 +301,8 @@ export default function TrackingPage() {
           </>
         ) : needsAttention ? (
           <>
-            <p className="label-cap" style={{ color: 'var(--danger, #FF3B30)', margin: 0, fontSize: 10 }}>Action needed</p>
-            <h1 className="font-display" style={{ fontSize: 24, margin: '4px 0 6px', color: 'white', lineHeight: 1.05 }}>Something needs attention</h1>
+            <p className="label-cap" style={{ color: 'var(--warn, #FFB800)', margin: 0, fontSize: 10 }}>Please wait</p>
+            <h1 className="font-display" style={{ fontSize: 24, margin: '4px 0 6px', color: 'white', lineHeight: 1.05 }}>Finding your runner</h1>
             <p style={{ fontSize: 13, color: 'var(--ink-2, #A09A8E)', fontWeight: 600, margin: 0 }}>We&apos;ll be in touch shortly.</p>
           </>
         ) : isScheduledPending ? (
@@ -396,12 +396,12 @@ export default function TrackingPage() {
         )}
 
         {needsAttention && (
-          <div style={{ background: 'var(--danger-dim, #2A0A0A)', border: '1px solid rgba(255,59,48,0.25)', borderRadius: 16, padding: '14px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <AlertTriangle size={18} color="#FF3B30" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ background: 'rgba(255,184,0,0.07)', border: '1px solid rgba(255,184,0,0.2)', borderRadius: 16, padding: '14px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <AlertTriangle size={18} color="#FFB800" style={{ flexShrink: 0, marginTop: 2 }} />
             <div>
-              <p style={{ fontWeight: 800, fontSize: 14, color: 'var(--danger, #FF3B30)', margin: 0 }}>We need to talk</p>
+              <p style={{ fontWeight: 800, fontSize: 14, color: 'var(--warn, #FFB800)', margin: 0 }}>Your payment is confirmed</p>
               <p style={{ fontSize: 12, color: 'var(--ink-2, #A09A8E)', fontWeight: 500, margin: '2px 0 0', lineHeight: 1.4 }}>
-                Support has been notified. They&apos;ll reach out via the runner&apos;s number.
+                All runners are busy right now. We&apos;ll assign one as soon as they&apos;re free &mdash; usually a few minutes.
               </p>
             </div>
           </div>

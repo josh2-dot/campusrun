@@ -226,6 +226,7 @@ export default function RunnerDashboard() {
   const [payoutSubmitting, setPayoutSubmitting] = useState(false)
   const [payoutDone, setPayoutDone] = useState(false)
   const [pendingPayoutExists, setPendingPayoutExists] = useState(false)
+  const [notApproved, setNotApproved] = useState(false)
   const [tab, setTab] = useState<'available' | 'recent'>('available')
   const [onlineSince, setOnlineSince] = useState<number | null>(null)
   const [tick, setTick] = useState(0)
@@ -286,7 +287,7 @@ export default function RunnerDashboard() {
 
       const [{ data: userData }, { data: runnerData }, { data: orders }] = await Promise.all([
         supabase.from('users').select('full_name').eq('id', user.id).single(),
-        supabase.from('runner_profiles').select('*').eq('user_id', user.id).single(),
+        supabase.from('runner_profiles').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('orders').select('*, restaurant:restaurants(name)').eq('runner_id', user.id).order('created_at', { ascending: false }).limit(20),
       ])
 
@@ -294,7 +295,11 @@ export default function RunnerDashboard() {
       setProfile(runnerData)
       setRecentOrders(orders ?? [])
 
+      // If no runner_profiles row, runner hasn't been approved yet
+      if (!runnerData) { setNotApproved(true); setLoading(false); return }
+
       if (runnerData) {
+
         const [{ data: pendingReq }, { data: paidHistory }] = await Promise.all([
           supabase.from('payout_requests').select('id').eq('runner_id', user.id).eq('status', 'pending').single(),
           supabase.from('payouts').select('amount').eq('runner_id', user.id),
@@ -382,6 +387,16 @@ export default function RunnerDashboard() {
   const isLunchSoon = useMemo(() => {
     const h = new Date().getHours(); return h >= 10 && h < 13
   }, [tick])
+
+  if (notApproved) return (
+    <div style={{ ...S.page, alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px 28px', fontFamily: "'Nunito', system-ui, sans-serif" }}>
+      <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(255,184,0,0.1)', border: '2px solid rgba(255,184,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, marginBottom: 24 }}>⏳</div>
+      <p style={{ fontSize: 10, fontWeight: 800, color: '#FFB800', letterSpacing: '0.15em', textTransform: 'uppercase', margin: '0 0 10px' }}>Under review</p>
+      <h1 className="font-display" style={{ fontSize: 30, color: 'white', margin: '0 0 12px', lineHeight: 1.1 }}>Application pending</h1>
+      <p style={{ fontSize: 14, color: '#6B6660', fontWeight: 600, margin: '0 0 32px', lineHeight: 1.7, maxWidth: 320 }}>Your application is being reviewed. We’ll notify you once approved — usually within 24–48 hours.</p>
+      <button onClick={() => window.open('https://wa.me/2348000000000', '_blank')} style={{ background: 'rgba(29,185,84,0.1)', border: '1px solid rgba(29,185,84,0.25)', color: '#1DB954', fontWeight: 800, fontSize: 14, padding: '12px 20px', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Questions? Chat on WhatsApp</button>
+    </div>
+  )
 
   if (loading) return (
     <div style={{ ...S.page, alignItems: 'center', justifyContent: 'center' }}>

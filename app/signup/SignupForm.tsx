@@ -19,6 +19,7 @@ export default function SignupForm() {
   const [email,        setEmail]        = useState('')
   const [phone,        setPhone]        = useState('')
   const [matricNumber, setMatricNumber] = useState('')
+  const [department,   setDepartment]   = useState('')
   const [password,     setPassword]     = useState('')
   const [showPass,     setShowPass]     = useState(false)
   const [loading,      setLoading]      = useState(false)
@@ -47,6 +48,7 @@ export default function SignupForm() {
     const passErr = validatePassword(password)
     if (passErr) errs.password = passErr
     if (role === 'runner' && !matricNumber.trim()) errs.matric = 'Matric number is required'
+    if (role === 'runner' && !department.trim())   errs.department = 'Department is required'
     setFieldErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -110,7 +112,8 @@ export default function SignupForm() {
       setLoading(false); submitting.current = false; return
     }
 
-    router.push(role === 'runner' ? '/dashboard' : '/onboarding')
+    // Runner: redirect to apply-runner page which shows pending approval state
+    router.push(role === 'runner' ? '/apply-runner' : '/onboarding')
   }
 
   const [showConfirm, setShowConfirm] = useState(false)
@@ -216,6 +219,14 @@ export default function SignupForm() {
 
           {role === 'runner' && (
             <>
+              <div>
+                <label style={lbl}>Department</label>
+                <input style={inpNoIcon} type="text" value={department}
+                  onChange={e => setDepartment(e.target.value)}
+                  placeholder="e.g. Computer Science" required
+                  onFocus={focus} onBlur={blur} />
+                {fieldErrors.department && <p style={ferr}>{fieldErrors.department}</p>}
+              </div>
               <div>
                 <label style={lbl}>Matric number</label>
                 <input style={inpNoIcon} type="text" value={matricNumber} onChange={e => setMatricNumber(e.target.value)} placeholder="RSU/2021/001234" required onFocus={focus} onBlur={blur} />

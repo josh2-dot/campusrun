@@ -36,15 +36,18 @@ export async function POST(req: NextRequest) {
   // ── Insert profile with admin client (bypasses RLS) ──────────
   const admin = createAdminClient()
 
+  // Runners start as 'customer' role until admin approves their application.
+  // runner_profiles is created only when admin approves.
+  const isRunnerSignup = payload.role === 'runner'
   const { error: profileError } = await admin.from('users').insert({
     id:              payload.id,
     email:           payload.email,
     phone:           payload.phone ?? '',
     full_name:       payload.full_name ?? '',
-    role:            payload.role ?? 'customer',
+    role:            isRunnerSignup ? 'customer' : (payload.role ?? 'customer'),
     matric_number:   payload.matric_number ?? null,
     is_active:       true,
-    onboarding_done: false,
+    onboarding_done: isRunnerSignup ? true : false,
   })
 
   if (profileError) {
@@ -58,15 +61,21 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Create runner profile if needed ──────────────────────────
-  if (payload.role === 'runner') {
-    await admin.from('runner_profiles').insert({
-      user_id:          payload.id,
-      is_available:     false,
-      total_deliveries: 0,
-      total_earnings:   0,
-      rating:           5.0,
+  // ── Runner signup: create application, not profile ──────────
+  // runner_profiles is created only when admin approves via /admin/applications
+  if (isRunnerSignup) {
+    await admin.from('runner_applications').insert({
+      user_id:       payload.id,
+      matric_number: payload.matric_number ?? '',
+      department:    payload.department ?? '',
+      status:        'pending',
+      applied_at:    new Date().toISOString(),
     })
+    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/admin/notify-application`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ applicantName: payload.full_name, matricNumber: payload.matric_number }),
+    }).catch(() => {})
   }
 
   return NextResponse.json({ success: true })

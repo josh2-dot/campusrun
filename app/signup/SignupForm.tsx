@@ -233,7 +233,7 @@ export default function SignupForm() {
                 {fieldErrors.matric && <p style={ferr}>{fieldErrors.matric}</p>}
               </div>
               <div style={{ background: 'rgba(255,107,43,0.08)', border: '1px solid rgba(255,107,43,0.2)', borderRadius: 12, padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#FF6B2B', lineHeight: 1.6 }}>
-                ₦300/delivery &nbsp;·&nbsp; +₦100 peak hours &nbsp;·&nbsp; Cash out any time
+                ₦300/delivery &nbsp;·&nbsp; Cash out any time
               </div>
             </>
           )}

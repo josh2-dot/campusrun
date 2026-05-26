@@ -105,15 +105,19 @@ function handleAdd(item: MenuItem) {
   }
 
   function confirmSwitchRestaurant() {
-  if (!confirmSwitch) return
-  const { clearCart } = useCartStore.getState()
-  clearCart()
-  // Small delay to ensure cart is cleared before adding
-  setTimeout(() => {
-    addItem(confirmSwitch, id, restaurant?.name ?? '')
+    if (!confirmSwitch) return
+    const { clearCart } = useCartStore.getState()
+    clearCart()
+    const item = confirmSwitch
     setConfirmSwitch(null)
-  }, 0)
-}
+    // After clearing, route through the picker — not directly to addItem
+    // so build-your-plate / swallow sheets still show up
+    if (isSwallowItem(item) || item.has_portions || item.portion_min_price || item.portion_max_price) {
+      setPortionPicker(item)
+    } else {
+      addItem(item, id, restaurant?.name ?? '')
+    }
+  }
 
   function selectCategory(cat: string, el: HTMLButtonElement | null) {
     setActiveCategory(cat)

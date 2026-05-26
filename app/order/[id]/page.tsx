@@ -373,8 +373,13 @@ export default function RunnerOrderPage() {
           <OrderItemList
             items={order.items ?? []}
             theme="dark"
-            showPrices={false}
+            showPrices={true}
           />
+          {/* Total — food only, what runner pays at restaurant */}
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 10, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.5)' }}>Total</span>
+            <span className="font-display" style={{ fontSize: 22, color: '#FF6B2B' }}>₦{(order.food_total ?? 0).toLocaleString()}</span>
+          </div>
         </div>
 
         {/* Customer note */}

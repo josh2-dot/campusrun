@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -221,8 +221,8 @@ export default function TrackingPage() {
     let label: string
 
     if (o.picked_up_at) {
-      // Runner has food — 5 min campus delivery
-      arriveAt = new Date(o.picked_up_at).getTime() + 5 * 60_000
+      // Runner has food — 10 min campus delivery
+      arriveAt = new Date(o.picked_up_at).getTime() + 10 * 60_000
       label = 'Delivering'
     } else if (o.runner_assigned_at) {
       // Runner assigned — prep + 3 min travel to restaurant

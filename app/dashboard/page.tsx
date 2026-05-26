@@ -394,7 +394,7 @@ export default function RunnerDashboard() {
       <p style={{ fontSize: 10, fontWeight: 800, color: '#FFB800', letterSpacing: '0.15em', textTransform: 'uppercase', margin: '0 0 10px' }}>Under review</p>
       <h1 className="font-display" style={{ fontSize: 30, color: 'white', margin: '0 0 12px', lineHeight: 1.1 }}>Application pending</h1>
       <p style={{ fontSize: 14, color: '#6B6660', fontWeight: 600, margin: '0 0 32px', lineHeight: 1.7, maxWidth: 320 }}>Your application is being reviewed. We’ll notify you once approved — usually within 24–48 hours.</p>
-      <button onClick={() => window.open('https://wa.me/2348000000000', '_blank')} style={{ background: 'rgba(29,185,84,0.1)', border: '1px solid rgba(29,185,84,0.25)', color: '#1DB954', fontWeight: 800, fontSize: 14, padding: '12px 20px', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Questions? Chat on WhatsApp</button>
+      <button onClick={() => window.open('https://wa.me/2348068404839', '_blank')} style={{ background: 'rgba(29,185,84,0.1)', border: '1px solid rgba(29,185,84,0.25)', color: '#1DB954', fontWeight: 800, fontSize: 14, padding: '12px 20px', borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Questions? Chat on WhatsApp</button>
     </div>
   )
 

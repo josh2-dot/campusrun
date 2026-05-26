@@ -81,6 +81,10 @@ function handleAdd(item: MenuItem) {
 
   function confirmSwallowChoice(choice: 'garri' | 'fufu') {
     if (!swallowPicker) return
+    if (cartRestaurantId && cartRestaurantId !== id) {
+      const { clearCart } = useCartStore.getState()
+      clearCart()
+    }
     addItem(swallowPicker, id, restaurant?.name ?? '', { swallow: choice })
     setSwallowPicker(null)
   }
@@ -91,6 +95,11 @@ function handleAdd(item: MenuItem) {
     swallow?: 'garri' | 'fufu'
   ) {
     if (!portionPicker) return
+    // If cart has items from a different restaurant, clear it first
+    if (cartRestaurantId && cartRestaurantId !== id) {
+      const { clearCart } = useCartStore.getState()
+      clearCart()
+    }
     addItem(portionPicker, id, restaurant?.name ?? '', { portions: selections, addons: addons.filter(a => a.quantity > 0 || (a.portions?.length ?? 0) > 0), swallow })
     setPortionPicker(null)
   }
@@ -260,13 +269,13 @@ function handleAdd(item: MenuItem) {
         )}
       </div>
 
-      {/* Cart bar */}
+      {/* Cart bar — fixed floating at bottom */}
       {totalItems() > 0 && (
-        <div style={{ padding: '12px 16px 24px', background: 'linear-gradient(to top, var(--bg-0, #0C0B09) 72%, transparent)' }}>
+        <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, padding: '12px 16px 28px', background: 'linear-gradient(to top, var(--bg-0, #0C0B09) 65%, transparent)', zIndex: 40, pointerEvents: 'none' }}>
           <button
             onClick={() => router.push('/checkout')}
             className="press"
-            style={{ width: '100%', background: 'var(--accent, #FF6B2B)', color: 'white', border: 'none', borderRadius: 16, padding: '14px 16px', display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'center', cursor: 'pointer', fontFamily: 'inherit' }}
+            style={{ width: '100%', background: 'var(--accent, #FF6B2B)', color: 'white', border: 'none', borderRadius: 16, padding: '14px 16px', display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'center', cursor: 'pointer', fontFamily: 'inherit', pointerEvents: 'auto', boxShadow: '0 4px 24px rgba(255,107,43,0.35)' }}
           >
             <span style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 8, padding: '4px 9px', fontSize: 12, fontWeight: 800, color: 'white' }}>
               {totalItems()}
@@ -276,6 +285,8 @@ function handleAdd(item: MenuItem) {
           </button>
         </div>
       )}
+      {/* Bottom padding so last item isn't hidden behind fixed cart bar */}
+      {totalItems() > 0 && <div style={{ height: 88 }} />}
 
       {/* Swallow picker sheet */}
       {swallowPicker && (

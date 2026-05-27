@@ -410,7 +410,7 @@ export default function TrackingPage() {
               </div>
             </div>
             <a
-              href={`https://wa.me/2348000000000?text=${encodeURIComponent(`Hi, my order ${order.order_ref || orderId} needs runner assignment. Can you help?`)}`}
+              href={`https://wa.me/2348068404839?text=${encodeURIComponent(`Hi, my order ${order.order_ref || order} needs runner assignment. Can you help?`)}`}
               target="_blank"
               rel="noreferrer"
               style={{ display: 'block', marginTop: 12, padding: '10px 12px', background: 'rgba(29,185,84,0.1)', border: '1px solid rgba(29,185,84,0.25)', borderRadius: 10, fontSize: 12, fontWeight: 800, color: 'var(--ok, #1DB954)', textAlign: 'center', textDecoration: 'none' }}

@@ -120,7 +120,8 @@ export default function HomePage() {
       )
 
       setLoading(false)
-      initPush().catch(() => {})
+      // Defer push prompt — only ask after they've placed at least one order
+      if ((orders ?? []).length > 0) initPush().catch(() => {})
       try {
         const { data: capRow } = await supabase.from('app_config').select('value').eq('key', 'daily_order_cap').single()
         const cap = parseInt(capRow?.value ?? '0')

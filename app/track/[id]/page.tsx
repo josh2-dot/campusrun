@@ -219,6 +219,7 @@ export default function TrackingPage() {
 
     let arriveAt: number
     let label: string
+    let isRough = false
 
     if (o.picked_up_at) {
       // Runner has food — 10 min campus delivery
@@ -232,10 +233,11 @@ export default function TrackingPage() {
       // Awaiting runner — rough estimate from order time
       arriveAt = new Date(order.created_at).getTime() + (prep + 15) * 60_000
       label = 'Finding runner'
+      isRough = true
     }
 
     const remaining = Math.max(0, Math.round((arriveAt - now) / 60_000))
-    return { remainingMin: remaining, label }
+    return { remainingMin: remaining, label, isRough }
   }, [order, now])
 
   async function cancelOrder(reason: string) {
@@ -333,14 +335,15 @@ export default function TrackingPage() {
                 <span className="font-display" style={{ fontSize: 28, color: 'white' }}>Finding a runner…</span>
               ) : (
                 <>
+                  {eta?.isRough && <span className="font-display" style={{ fontSize: 16, color: 'var(--ink-3, #6B6660)', marginRight: 2 }}>est.</span>}
                   <span className="font-display" style={{ fontSize: 54, color: 'var(--accent, #FF6B2B)', lineHeight: 1 }}>~{eta?.remainingMin ?? '—'}</span>
                   <span className="font-display" style={{ fontSize: 18, color: 'white' }}>min</span>
                 </>
               )}
-              {(eta?.remainingMin ?? 1) > 0
+              {!awaitingRunner && !eta?.isRough && ((eta?.remainingMin ?? 1) > 0
                 ? <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><span className="dot" />ON TIME</span>
                 : <span className="pill pill-warn" style={{ marginLeft: 'auto' }}>RUNNING LATE</span>
-              }
+              )}
             </div>
             <p style={{ fontSize: 13, color: 'var(--ink-2, #A09A8E)', fontWeight: 600, margin: '6px 0 0' }}>
               {statusLabel(order.status)}{restaurant ? <> · <b style={{ color: 'white', fontWeight: 800 }}>{restaurant.name}</b></> : null}
@@ -396,14 +399,24 @@ export default function TrackingPage() {
         )}
 
         {needsAttention && (
-          <div style={{ background: 'rgba(255,184,0,0.07)', border: '1px solid rgba(255,184,0,0.2)', borderRadius: 16, padding: '14px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <AlertTriangle size={18} color="#FFB800" style={{ flexShrink: 0, marginTop: 2 }} />
-            <div>
-              <p style={{ fontWeight: 800, fontSize: 14, color: 'var(--warn, #FFB800)', margin: 0 }}>Your payment is confirmed</p>
-              <p style={{ fontSize: 12, color: 'var(--ink-2, #A09A8E)', fontWeight: 500, margin: '2px 0 0', lineHeight: 1.4 }}>
-                All runners are busy right now. We&apos;ll assign one as soon as they&apos;re free &mdash; usually a few minutes.
-              </p>
+          <div style={{ background: 'rgba(255,184,0,0.07)', border: '1px solid rgba(255,184,0,0.2)', borderRadius: 16, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <AlertTriangle size={18} color="#FFB800" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <p style={{ fontWeight: 800, fontSize: 14, color: 'var(--warn, #FFB800)', margin: 0 }}>Your payment is confirmed</p>
+                <p style={{ fontSize: 12, color: 'var(--ink-2, #A09A8E)', fontWeight: 500, margin: '2px 0 0', lineHeight: 1.4 }}>
+                  All runners are busy right now. We&apos;ll assign one as soon as they&apos;re free &mdash; usually a few minutes.
+                </p>
+              </div>
             </div>
+            <a
+              href={`https://wa.me/2348000000000?text=${encodeURIComponent(`Hi, my order ${order.order_ref || orderId} needs runner assignment. Can you help?`)}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: 'block', marginTop: 12, padding: '10px 12px', background: 'rgba(29,185,84,0.1)', border: '1px solid rgba(29,185,84,0.25)', borderRadius: 10, fontSize: 12, fontWeight: 800, color: 'var(--ok, #1DB954)', textAlign: 'center', textDecoration: 'none' }}
+            >
+              💬  Message support on WhatsApp
+            </a>
           </div>
         )}
 

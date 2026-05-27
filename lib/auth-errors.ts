@@ -17,7 +17,7 @@ export function friendlyAuthError(raw: string): string {
   if (msg.includes('unable to validate email address'))
     return 'That email address doesn\'t look valid. Please check it.'
   if (msg.includes('email rate limit exceeded') || msg.includes('over_email_send_rate_limit'))
-    return 'Too many attempts. Please wait a few minutes before trying again.'
+    return 'Email already sent. Check your inbox — wait a minute before requesting another.'
   if (msg.includes('captcha'))
     return 'Security check failed. Please refresh the page and try again.'
   if (msg.includes('signup is disabled'))
@@ -52,7 +52,8 @@ export function friendlySignupError(raw: string): string {
 // ── Client-side validators ────────────────────────────────────
 export function validatePhone(phone: string): string | null {
   const cleaned = phone.replace(/\s+/g, '').replace(/^(\+234)/, '0')
-  if (!/^0[789][01]\d{8}$/.test(cleaned))
+  // Accept any 11-digit number starting with 070, 080, 081, 090, 091
+  if (!/^0[789]\d{9}$/.test(cleaned))
     return 'Enter a valid Nigerian phone number (e.g. 08012345678)'
   return null
 }

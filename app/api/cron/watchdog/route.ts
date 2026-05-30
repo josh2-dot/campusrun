@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
     pools_closed:        0,
     stuck_rebroadcast:   0,
     stuck_escalated:     0,
+    preorder_pushes_sent: 0,
+    featured_push_sent: 0,
   }
 
   /* ────────────────────────────────────────────────────────
@@ -201,15 +203,28 @@ export async function GET(request: NextRequest) {
           .eq('is_available', true)
           .limit(3)
 
-        const openFeatured = (featured ?? []).filter((f: { restaurants: { is_open?: boolean } }) => f.restaurants?.is_open)
+        // Supabase returns joined relations as arrays — normalize to single object
+        type FeaturedRow = {
+          name: string
+          price: number
+          restaurant_id: string
+          restaurants: Array<{ name: string; is_open?: boolean }> | { name: string; is_open?: boolean } | null
+        }
+        const normalized = ((featured ?? []) as FeaturedRow[])
+          .map(r => ({
+            name:       r.name,
+            price:      r.price,
+            restaurant_id: r.restaurant_id,
+            restaurant: Array.isArray(r.restaurants) ? r.restaurants[0] : r.restaurants,
+          }))
+          .filter(r => r.restaurant?.is_open)
 
-        if (openFeatured.length > 0) {
-          // Build message — name top dish, hint there's more
-          const top = openFeatured[0] as { name: string; price: number; restaurant_id: string; restaurants: { name: string } }
-          const more = openFeatured.length - 1
+        if (normalized.length > 0) {
+          const top  = normalized[0]
+          const more = normalized.length - 1
           const body = more > 0
-            ? `Today: ${top.name} \u20A6${top.price.toLocaleString()} from ${top.restaurants.name} + ${more} more`
-            : `Today: ${top.name} \u20A6${top.price.toLocaleString()} from ${top.restaurants.name}`
+            ? `Today: ${top.name} ₦${top.price.toLocaleString()} from ${top.restaurant?.name} + ${more} more`
+            : `Today: ${top.name} ₦${top.price.toLocaleString()} from ${top.restaurant?.name}`
 
           // Send to all customers who have a push subscription
           const { data: allSubs } = await supabase
@@ -220,7 +235,7 @@ export async function GET(request: NextRequest) {
 
           await Promise.allSettled(
             uniqueUserIds.map(uid => sendPushToUser(uid, {
-              title: '\uD83C\uDF7D\uFE0F Today\u2019s lunch picks are up',
+              title: '🍽️ Today\'s lunch picks are up',
               body,
               url:   '/home',
               tag:   'featured-daily',
@@ -229,13 +244,11 @@ export async function GET(request: NextRequest) {
 
           await supabase.from('featured_push_log').insert({
             send_date:  today,
-            dish_count: openFeatured.length,
+            dish_count: normalized.length,
           })
           results.featured_push_sent = uniqueUserIds.length
         }
       }
-    }
-  }
 
 
   /* ────────────────────────────────────────────────────────

@@ -111,6 +111,134 @@ export async function GET(request: NextRequest) {
   }
 
   /* ────────────────────────────────────────────────────────
+     JOB 1C — Pre-order window opening soon (15 min before peak)
+     Sends a push to all users subscribed to a restaurant's pre-order window.
+     Fires once per restaurant per day.
+  ──────────────────────────────────────────────────────── */
+  {
+    // Look for restaurants whose peak_open_time is 10-20 min from now
+    // (giving us a 10-min cron-friendly window).
+    const today  = now.toISOString().slice(0, 10)
+    const nowHM  = now.getHours() * 60 + now.getMinutes()
+
+    const { data: rests } = await supabase
+      .from('restaurants')
+      .select('id, name, peak_open_time, pre_order_enabled, is_open')
+      .eq('pre_order_enabled', true)
+      .eq('is_open', true)
+
+    for (const r of rests ?? []) {
+      if (!r.peak_open_time) continue
+      const [hh, mm] = String(r.peak_open_time).split(':').map(Number)
+      const peakHM   = hh * 60 + mm
+      const minsUntilPeak = peakHM - nowHM
+      // Window: 10-20 min before peak
+      if (minsUntilPeak < 10 || minsUntilPeak > 20) continue
+
+      // Skip if we already pushed today for this restaurant
+      const { data: alreadySent } = await supabase
+        .from('pre_order_push_log')
+        .select('id')
+        .eq('restaurant_id', r.id)
+        .eq('send_date', today)
+        .maybeSingle()
+      if (alreadySent) continue
+
+      // Get all subscribers
+      const { data: subs } = await supabase
+        .from('pre_order_subscriptions')
+        .select('user_id')
+        .eq('restaurant_id', r.id)
+      if (!subs?.length) {
+        // Still log so we don't keep checking until end of window
+        await supabase.from('pre_order_push_log').insert({ restaurant_id: r.id, send_date: today })
+        continue
+      }
+
+      // Format peak time for body copy
+      const timeLabel = `${hh > 12 ? hh - 12 : hh}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}`
+
+      // Send pushes in parallel
+      await Promise.allSettled(
+        subs.map(s => sendPushToUser(s.user_id, {
+          title: `\u23F0 ${r.name} pre-orders open soon`,
+          body:  `Lunch rush at ${timeLabel}. Pre-order now to skip the queue \u2014 food will be ready when you arrive.`,
+          url:   `/restaurant/${r.id}`,
+          tag:   `preorder-open-${r.id}`,
+        }))
+      )
+
+      // Log so we don't re-send
+      await supabase.from('pre_order_push_log').insert({ restaurant_id: r.id, send_date: today })
+      results.preorder_pushes_sent = (results.preorder_pushes_sent ?? 0) + (subs.length)
+    }
+  }
+
+
+  /* ────────────────────────────────────────────────────────
+     JOB 1D — Daily featured-dish push
+     Once per day at lunchtime (11-12 server time), pushes a notification
+     to all users with active subscriptions, showcasing today's featured dishes.
+  ──────────────────────────────────────────────────────── */
+  {
+    const today = now.toISOString().slice(0, 10)
+    const hour  = now.getHours()
+
+    // Only fire between 11:00 and 12:00 local server time
+    if (hour === 11) {
+      const { data: alreadySent } = await supabase
+        .from('featured_push_log')
+        .select('send_date')
+        .eq('send_date', today)
+        .maybeSingle()
+
+      if (!alreadySent) {
+        // Fetch up to 3 featured + available dishes joined with restaurant names
+        const { data: featured } = await supabase
+          .from('menu_items')
+          .select('name, price, restaurant_id, restaurants!inner(name, is_open)')
+          .eq('is_featured', true)
+          .eq('is_available', true)
+          .limit(3)
+
+        const openFeatured = (featured ?? []).filter((f: { restaurants: { is_open?: boolean } }) => f.restaurants?.is_open)
+
+        if (openFeatured.length > 0) {
+          // Build message — name top dish, hint there's more
+          const top = openFeatured[0] as { name: string; price: number; restaurant_id: string; restaurants: { name: string } }
+          const more = openFeatured.length - 1
+          const body = more > 0
+            ? `Today: ${top.name} \u20A6${top.price.toLocaleString()} from ${top.restaurants.name} + ${more} more`
+            : `Today: ${top.name} \u20A6${top.price.toLocaleString()} from ${top.restaurants.name}`
+
+          // Send to all customers who have a push subscription
+          const { data: allSubs } = await supabase
+            .from('push_subscriptions')
+            .select('user_id')
+
+          const uniqueUserIds = [...new Set((allSubs ?? []).map(s => s.user_id))]
+
+          await Promise.allSettled(
+            uniqueUserIds.map(uid => sendPushToUser(uid, {
+              title: '\uD83C\uDF7D\uFE0F Today\u2019s lunch picks are up',
+              body,
+              url:   '/home',
+              tag:   'featured-daily',
+            }))
+          )
+
+          await supabase.from('featured_push_log').insert({
+            send_date:  today,
+            dish_count: openFeatured.length,
+          })
+          results.featured_push_sent = uniqueUserIds.length
+        }
+      }
+    }
+  }
+
+
+  /* ────────────────────────────────────────────────────────
      JOB 2 — Re-broadcast / escalate stuck orders
      Orders stuck in awaiting_runner for 10+ minutes
   ──────────────────────────────────────────────────────── */

@@ -19,6 +19,30 @@ export default function RestaurantPage() {
   const [activeCategory, setActiveCategory] = useState('All')
   const [loading, setLoading] = useState(true)
   const [confirmSwitch, setConfirmSwitch] = useState<MenuItem | null>(null)
+  const [notifySubscribed, setNotifySubscribed] = useState(false)
+  const [notifyLoading,    setNotifyLoading]    = useState(false)
+
+  // Check if user is subscribed to pre-order notifications for this restaurant
+  useEffect(() => {
+    if (!id) return
+    fetch(`/api/preorder-subscribe?restaurantId=${id}`)
+      .then(r => r.json())
+      .then(d => setNotifySubscribed(!!d.subscribed))
+      .catch(() => {})
+  }, [id])
+
+  async function toggleNotify() {
+    if (notifyLoading) return
+    setNotifyLoading(true)
+    const res = await fetch('/api/preorder-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restaurantId: id }),
+    })
+    const d = await res.json()
+    setNotifySubscribed(!!d.subscribed)
+    setNotifyLoading(false)
+  }
   const [swallowPicker, setSwallowPicker] = useState<MenuItem | null>(null)
   const [portionPicker, setPortionPicker] = useState<MenuItem | null>(null)
   const [preOrderPhase, setPreOrderPhase] = useState<{ phase: string; peakAt?: string; postPeakUntil?: string } | null>(null)
@@ -214,17 +238,23 @@ function handleAdd(item: MenuItem) {
           </div>
         </div>
       )}
-      {preOrderPhase?.phase === 'closed_today' && (
-        <div style={{ margin: '12px 16px 0', padding: '12px 14px', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ fontSize: 18 }}>{'\u2714'}</span>
+      {preOrderPhase?.phase === 'closed_today' && restaurant?.pre_order_enabled && (
+        <div style={{ margin: '12px 16px 0', padding: '12px 14px', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ fontSize: 18 }}>{'\u2714'}</span>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontWeight: 900, fontSize: 13, color: 'var(--ink-2, #A09A8E)', margin: 0 }}>Pre-order window closed</p>
+              <p style={{ fontSize: 11, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '2px 0 0' }}>
+                Today{'\u2019'}s pre-orders are done. Come back tomorrow at the same time.
+              </p>
+            </div>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontWeight: 900, fontSize: 13, color: 'var(--ink-2, #A09A8E)', margin: 0 }}>Pre-order window closed</p>
-            <p style={{ fontSize: 11, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '2px 0 0' }}>
-              Today{'\u2019'}s pre-orders are done. Order normally {'\u2014'} or come back tomorrow at the same time.
-            </p>
-          </div>
+          <button onClick={toggleNotify} disabled={notifyLoading} className="press"
+            style={{ width: '100%', marginTop: 10, padding: '10px 12px', background: notifySubscribed ? 'rgba(29,185,84,0.1)' : 'var(--accent, #FF6B2B)', border: notifySubscribed ? '1px solid rgba(29,185,84,0.25)' : 'none', borderRadius: 10, color: notifySubscribed ? 'var(--ok, #1DB954)' : 'white', fontWeight: 800, fontSize: 12, cursor: notifyLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: notifyLoading ? 0.6 : 1 }}>
+            {notifySubscribed ? '\u2713 Notifications on \u2014 we\u2019ll remind you' : '\uD83D\uDD14 Notify me when it opens tomorrow'}
+          </button>
         </div>
       )}
 

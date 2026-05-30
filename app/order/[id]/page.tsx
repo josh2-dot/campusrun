@@ -186,13 +186,34 @@ export default function RunnerOrderPage() {
         </div>
       </div>
       <div style={S.body}>
-        <div style={{ ...S.card, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={S.avatarCircle}>👤</div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontWeight: 800, fontSize: 14, margin: 0 }}>{customer?.full_name}</p>
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, margin: '2px 0 0' }}>📍 {order.delivery_address}</p>
+        <div style={S.card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={S.avatarCircle}>👤</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontWeight: 800, fontSize: 14, margin: 0, color: 'white' }}>{customer?.full_name}</p>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, margin: '2px 0 0' }}>📍 {order.delivery_address}</p>
+            </div>
           </div>
-          {customer?.phone && <a href={`tel:${customer.phone}`} style={S.callBtn}>📞</a>}
+          {customer?.phone && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <a
+                href={`sms:${customer.phone}`}
+                className="press"
+                aria-label={`Message ${customer.full_name}`}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 800, fontSize: 13, padding: '10px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                💬 Message
+              </a>
+              <a
+                href={`tel:${customer.phone}`}
+                className="press"
+                aria-label={`Call ${customer.full_name}`}
+                style={{ flex: 1, background: '#1DB954', color: 'white', fontWeight: 800, fontSize: 13, padding: '10px', borderRadius: 12, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                📞 Call
+              </a>
+            </div>
+          )}
         </div>
         {transferRef && (
           <div style={{

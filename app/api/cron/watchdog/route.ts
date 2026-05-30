@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { sendPushToUser, sendPushToAvailableRunners, sendPushToAdmins } from '@/lib/send-push'
+import { SupabaseClient } from '@supabase/supabase-js'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -378,3 +379,9 @@ async function sendSMS(phone: string, message: string) {
     console.error('[watchdog] SMS error:', e)
   }
 }
+}
+}
+function activateOrder(order: any, supabase: SupabaseClient<any, "public", "public", any, any>, now: Date) {
+  throw new Error('Function not implemented.')
+}
+

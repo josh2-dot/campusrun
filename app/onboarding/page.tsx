@@ -82,6 +82,8 @@ export default function OnboardingPage() {
     if (user) {
       await supabase.from('users').update({ onboarding_done: true }).eq('id', user.id)
     }
+    // Flag for home page to auto-trigger the tutorial walkthrough
+    try { localStorage.setItem('campusrun_show_tutorial', '1') } catch {}
     router.replace('/home')
   }
 

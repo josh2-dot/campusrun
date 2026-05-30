@@ -1,5 +1,7 @@
 'use client'
 
+import { AppTutorial } from '@/components/ui/AppTutorial'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -26,7 +28,8 @@ export default function ProfilePage() {
 const { lastAddress } = useCartStore()
 
   const [user, setUser] = useState<ProfileUser | null>(null)
-  const [showShare, setShowShare] = useState(false)
+  const [showShare,    setShowShare]    = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
   const [runnerAppStatus, setRunnerAppStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
@@ -283,13 +286,16 @@ const { lastAddress } = useCartStore()
 
         {/* ── HOW IT WORKS ── */}
         <button
-          onClick={() => router.push('/onboarding')}
+          onClick={() => setShowTutorial(true)}
           style={{ width: '100%', background: 'var(--bg-1, #1A1917)', color: 'var(--ink-2, #A09A8E)', fontWeight: 700, fontSize: 14, padding: '14px 16px', borderRadius: 16, border: '1px solid var(--line, #2A2825)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10 }}
         >
           <span style={{ fontSize: 18 }}>ℹ️</span>
           How CampusRun works
           <span style={{ marginLeft: 'auto' }}>›</span>
         </button>
+
+        {/* Tutorial overlay */}
+        {showTutorial && <AppTutorial onClose={() => setShowTutorial(false)} />}
 
         {/* ── SIGN OUT ── */}
         <button

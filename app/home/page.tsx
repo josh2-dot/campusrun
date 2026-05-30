@@ -8,6 +8,7 @@ import { initPush } from '@/lib/push'
 import { monogram } from '@/lib/utils'
 import { BottomNav } from '@/components/ui/BottomNav'
 import { InstallPrompt } from '@/components/ui/InstallPrompt'
+import { AppTutorial } from '@/components/ui/AppTutorial'
 import type { Restaurant, MenuItem, Order } from '@/types'
 import { Search, ShoppingBag, X } from 'lucide-react'
 import { useCartStore, getFavorites, toggleFavorite } from '@/store/cart'
@@ -21,6 +22,17 @@ interface SearchResult {
 
 export default function HomePage() {
   const router = useRouter()
+
+  // First-time customers: auto-show the tutorial after onboarding
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('campusrun_show_tutorial') === '1') {
+        localStorage.removeItem('campusrun_show_tutorial')
+        // Slight delay so the home page renders first
+        setTimeout(() => setShowTutorial(true), 400)
+      }
+    } catch {}
+  }, [])
   const supabase = createClient()
   const [firstName, setFirstName] = useState('there')
   const [restaurants, setRestaurants] = useState<Restaurant[]>([])
@@ -29,7 +41,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('all')
   const [favIds, setFavIds] = useState<string[]>([])
-  const [fullyBooked, setFullyBooked] = useState(false)
+  const [fullyBooked,  setFullyBooked]  = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
   const [featuredItems, setFeaturedItems] = useState<(ReturnType<typeof Object.values>[0] & { restaurant_name?: string })[]>([])
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -421,6 +434,7 @@ export default function HomePage() {
         </div>
       )}
       <InstallPrompt />
+      {showTutorial && <AppTutorial onClose={() => setShowTutorial(false)} />}
       <BottomNav active="home" />
     </div>
   )

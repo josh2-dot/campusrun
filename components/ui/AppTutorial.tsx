@@ -53,7 +53,7 @@ const STEPS: TutorialStep[] = [
     emoji: '✨',
     capLabel: 'STEP 5',
     title: 'Skip the queue with pre-orders',
-    body: "Some restaurants (like Madam Joe at lunch rush) let you pre-order hours in advance. Pay before peak time, food is ready when you arrive. No queue, no wait. Look for the ⚡ pre-order tag on the home page.",
+    body: "Some restaurants (like Amanam, has long queues) let you pre-order hours in advance. Pay before peak time, food is ready when you arrive. No queue, no wait. Look for the ⚡ pre-order tag on the home page.",
   },
   {
     emoji: '⭐',

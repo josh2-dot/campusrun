@@ -36,6 +36,7 @@ export interface Restaurant {
   avg_restaurant_rating?: number
   restaurant_rating_count?: number
   created_at: string
+  pre_order_enabled?: boolean
 }
 
 export interface MenuItem {

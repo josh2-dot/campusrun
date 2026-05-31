@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const admin = createAdminClient()
-  const { data: order } = await admin.from('orders').select('id, status, runner_id, customer_id, delivery_code, order_ref').eq('id', orderId).single()
+  const { data: order } = await admin.from('orders').select('id, status, runner_id, customer_id, delivery_code, order_ref, food_total').eq('id', orderId).single()
 
   if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   if (order.runner_id !== user.id) return NextResponse.json({ error: 'Not your order' }, { status: 403 })
@@ -21,6 +21,17 @@ export async function POST(request: NextRequest) {
 
   const { data: updated, error } = await admin.from('orders').update({ status: 'delivered', delivered_at: new Date().toISOString() }).eq('id', orderId).select().single()
   if (error || !updated) return NextResponse.json({ error: 'Failed to confirm delivery' }, { status: 500 })
+
+  // ── Debit float: food cost + runner cut went out today ──────────
+  // Logged in float_ledger for audit. Future Paystack settlement will credit it back.
+  const RUNNER_FLAT_EARNINGS = 300
+  const cashOut = (order.food_total ?? 0) + RUNNER_FLAT_EARNINGS
+  await admin.rpc('debit_float', {
+    p_amount:   cashOut,
+    p_order_id: orderId,
+    p_reason:   'order_cashout',
+    p_notes:    `Order ${order.order_ref}`,
+  })
 
   // Push to customer: delivered
   await sendPushToUser(order.customer_id, {

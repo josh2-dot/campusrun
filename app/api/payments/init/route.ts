@@ -33,33 +33,22 @@ export async function POST(request: NextRequest) {
     }, { status: 429 })
   }
 
-  // ── 2. Daily cap check (new) ─────────────────────────────────────────────
-  const { data: capConfig } = await admin
-    .from('app_config')
-    .select('value')
-    .eq('key', 'daily_order_cap')
-    .single()
+  // ── 2. Float capacity check ──────────────────────────────────────────────
+  // Block new orders if accepting this one would drop float below the safety buffer.
+  // Uses a rolling average of recent order costs to estimate impact.
+  const { data: balanceRow }     = await admin.from('app_config').select('value').eq('key', 'float_balance').single()
+  const { data: bufferRow }      = await admin.from('app_config').select('value').eq('key', 'float_safety_buffer').single()
+  const { data: avgCostResult }  = await admin.rpc('estimate_order_net_cost')
 
-  const dailyCap = parseInt(capConfig?.value ?? '0')
+  const floatBalance  = parseFloat(balanceRow?.value ?? '0')
+  const safetyBuffer  = parseFloat(bufferRow?.value ?? '10000')
+  const estCost       = parseFloat(String(avgCostResult ?? '3500'))
 
-  if (dailyCap > 0) {
-    // Count today's orders (midnight to now, local Nigeria time UTC+1)
-    const todayStart = new Date()
-    todayStart.setUTCHours(23, 0, 0, 0) // 11pm UTC = midnight WAT
-    if (todayStart > new Date()) todayStart.setUTCDate(todayStart.getUTCDate() - 1)
-
-    const { count: todayCount } = await admin
-      .from('orders')
-      .select('*', { count: 'exact', head: true })
-      .neq('status', 'cancelled')
-      .gte('created_at', todayStart.toISOString())
-
-    if ((todayCount ?? 0) >= dailyCap) {
-      return NextResponse.json({
-        error: `We're fully booked for today — we've hit our daily limit. Check back tomorrow morning or follow our WhatsApp for updates! 🙏`,
-        code: 'DAILY_CAP_REACHED',
-      }, { status: 429 })
-    }
+  if (floatBalance - estCost < safetyBuffer) {
+    return NextResponse.json({
+      error: `We're temporarily at capacity — back to taking orders very soon. Check our WhatsApp status for updates 🙏`,
+      code: 'FLOAT_DEPLETED',
+    }, { status: 503 })
   }
 
   // ── 3. Pre-order detection ──────────────────────────────────────────────

@@ -46,6 +46,10 @@ export default function AdminDashboard() {
   const [analytics,        setAnalytics]        = useState<Analytics | null>(null)
   const [loading,          setLoading]          = useState(true)
   const [dailyCap,         setDailyCap]         = useState(0)
+  const [floatBalance,     setFloatBalance]     = useState(0)
+  const [floatBuffer,      setFloatBuffer]      = useState(10000)
+  const [floatEditing,     setFloatEditing]     = useState(false)
+  const [floatInput,       setFloatInput]       = useState('')
   const [todayCount,       setTodayCount]       = useState(0)
   const [savingCap,        setSavingCap]        = useState(false)
   const [tab,              setTab]              = useState<'active' | 'all'>('active')
@@ -131,6 +135,12 @@ export default function AdminDashboard() {
         const { count } = await supabase.from('orders').select('*', { count: 'exact', head: true }).neq('status', 'cancelled').gte('created_at', todayStart.toISOString())
         setTodayCount(count ?? 0)
       }
+
+      // Float balance + safety buffer
+      const { data: balanceRow } = await supabase.from('app_config').select('value').eq('key', 'float_balance').single()
+      const { data: bufferRow }  = await supabase.from('app_config').select('value').eq('key', 'float_safety_buffer').single()
+      setFloatBalance(parseFloat(balanceRow?.value ?? '0'))
+      setFloatBuffer(parseFloat(bufferRow?.value ?? '10000'))
     } catch { /* app_config may not exist yet */ }
     setLoading(false)
   }, [supabase]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -151,6 +161,23 @@ export default function AdminDashboard() {
     const poll = setInterval(load, 15000)
     return () => { supabase.removeChannel(channel); clearInterval(poll) }
   }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save float balance via the credit_float function (audit logged)
+  async function saveFloatBalance(newAmount: number) {
+    const diff = newAmount - floatBalance
+    if (diff === 0) { setFloatEditing(false); return }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (Math.abs(diff) > 0) {
+      await supabase.rpc(diff > 0 ? 'credit_float' : 'debit_float', {
+        p_amount:     Math.abs(diff),
+        p_reason:     'manual_adjustment',
+        p_notes:      `Admin set balance to ₦${newAmount.toLocaleString()}`,
+        ...(diff > 0 ? { p_created_by: user?.id } : { p_order_id: null }),
+      })
+    }
+    setFloatBalance(newAmount)
+    setFloatEditing(false)
+  }
 
   // Save daily cap to database
   const saveDailyCap = async (value: number) => {
@@ -317,6 +344,43 @@ export default function AdminDashboard() {
             <p style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.3)', margin: '2px 0 0', letterSpacing: 0.5 }}>{stat.lbl}</p>
           </div>
         ))}
+      </div>
+
+      {/* ── Float balance ── */}
+      <div style={{ padding: '10px 16px 0' }}>
+        <div style={{ background: floatBalance <= floatBuffer ? 'rgba(255,59,48,0.08)' : floatBalance <= floatBuffer * 2.5 ? 'rgba(255,184,0,0.08)' : '#1A1917', borderRadius: 14, padding: '14px 16px', border: `1px solid ${floatBalance <= floatBuffer ? 'rgba(255,59,48,0.3)' : floatBalance <= floatBuffer * 2.5 ? 'rgba(255,184,0,0.3)' : '#2A2825'}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 1 }}>Float Balance</span>
+              {floatBalance <= floatBuffer && <span style={{ background: 'rgba(255,59,48,0.2)', color: '#FF3B30', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 100, letterSpacing: 0.5 }}>DEPLETED</span>}
+              {floatBalance > floatBuffer && floatBalance <= floatBuffer * 2.5 && <span style={{ background: 'rgba(255,184,0,0.2)', color: '#FFB800', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 100, letterSpacing: 0.5 }}>LOW</span>}
+              {floatBalance > floatBuffer * 2.5 && <span style={{ background: 'rgba(29,185,84,0.18)', color: '#1DB954', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 100, letterSpacing: 0.5 }}>HEALTHY</span>}
+            </div>
+            <button onClick={() => { setFloatEditing(true); setFloatInput(String(floatBalance)) }}
+              style={{ background: 'transparent', border: 'none', color: '#FF6B2B', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+              Adjust
+            </button>
+          </div>
+          {floatEditing ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 22, fontWeight: 900, color: 'white' }}>₦</span>
+              <input type="number" value={floatInput} onChange={e => setFloatInput(e.target.value)}
+                autoFocus
+                style={{ flex: 1, background: '#0C0B09', border: '1px solid #2A2825', borderRadius: 8, padding: '8px 10px', color: 'white', fontSize: 18, fontWeight: 800, fontFamily: 'inherit', outline: 'none' }} />
+              <button onClick={() => saveFloatBalance(parseFloat(floatInput) || 0)}
+                style={{ background: '#FF6B2B', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Save</button>
+              <button onClick={() => setFloatEditing(false)}
+                style={{ background: 'transparent', color: '#6B6660', border: 'none', padding: '8px 6px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+            </div>
+          ) : (
+            <p style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 800, color: floatBalance <= floatBuffer ? '#FF3B30' : 'white', margin: 0, letterSpacing: '-0.02em' }}>
+              ₦{floatBalance.toLocaleString()}
+            </p>
+          )}
+          <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 600, margin: '6px 0 0' }}>
+            Safety buffer ₦{floatBuffer.toLocaleString()} · New orders blocked when float would drop below buffer
+          </p>
+        </div>
       </div>
 
       {/* Daily order cap */}

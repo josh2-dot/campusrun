@@ -49,8 +49,10 @@ export default function CheckoutPage() {
   const subtotal       = foodTotal()
   const plateFee       = plateFeeTotal()
   const orderTotal     = subtotal + plateFee + DELIVERY_FEE
+  // Paystack now charges the processing fee directly to the customer on their checkout page.
+  // We still display the estimate so there are no surprises.
   const processingFee  = calcProcessingFee(orderTotal)
-  const grandTotal     = orderTotal + processingFee
+  const grandTotal     = orderTotal
 
   useEffect(() => {
     if (items.length === 0) { router.push('/home'); return }
@@ -363,13 +365,15 @@ export default function CheckoutPage() {
             <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>₦{DELIVERY_FEE.toLocaleString()}</span>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--line-soft, #1F1D1B)' }}>
-            <span style={{ fontSize: 11, color: 'var(--ink-3, #6B6660)', fontWeight: 600 }}>
-              Payment processing
-            </span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3, #6B6660)' }}>
-              ₦{processingFee.toLocaleString()}
-            </span>
+          <div style={{ paddingBottom: 12, marginBottom: 12, borderBottom: '1px solid var(--line-soft, #1F1D1B)' }}>
+          </div>
+
+          {/* Paystack fee heads-up */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 12px', background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 10, marginBottom: 14 }}>
+            <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1 }}>ℹ️</span>
+            <p style={{ fontSize: 11, color: '#60a5fa', fontWeight: 700, margin: 0, lineHeight: 1.5 }}>
+              Paystack will add ~₦{processingFee.toLocaleString()} processing fee at the next step. That goes to Paystack, not us.
+            </p>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -500,11 +504,7 @@ export default function CheckoutPage() {
             </span>
           )}
         </button>
-        {!loading && addressReady && (
-          <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '8px 0 0' }}>
-            Includes ₦{processingFee.toLocaleString()} payment processing fee
-          </p>
-        )}
+
       </div>
     </div>
   )

@@ -24,23 +24,31 @@ export default function CheckoutPage() {
   if (items.length === 0) { router.push('/home'); return null }
 
   async function handlePlaceOrder() {
-    if (!deliveryAddress.trim()) { setError('Please enter your delivery address'); return }
-    setLoading(true); setError('')
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/login'); return }
-    const { data: profile } = await supabase.from('users').select('email').eq('id', user.id).single()
-    const { data: order, error: orderError } = await supabase.from('orders').insert({
-      order_ref: generateOrderRef(), customer_id: user.id, restaurant_id: restaurantId, items,
-      delivery_address: deliveryAddress, food_total: subtotal, delivery_fee: DELIVERY_FEE,
-      platform_cut: PLATFORM_CUT, runner_earnings: RUNNER_EARNINGS, status: 'pending', broadcast_count: 0,
-    }).select().single()
-    if (orderError) { setError('Failed to create order: ' + orderError.message); setLoading(false); return }
-    const res = await fetch('/api/payments/init', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: order.id, amount: total, email: profile?.email || user.email }) })
-    const result = await res.json()
-    if (result.error) { setError(result.error); setLoading(false); return }
-    clearCart()
-    window.location.href = result.authorization_url
-  }
+  if (!deliveryAddress.trim()) { setError('Please enter your delivery address'); return }
+  setLoading(true); setError('')
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) { setError('Auth error: ' + authError?.message); setLoading(false); return }
+  
+  const { data: profile } = await supabase.from('users').select('email').eq('id', user.id).single()
+  
+  const { data: order, error: orderError } = await supabase.from('orders').insert({
+    order_ref: generateOrderRef(), customer_id: user.id, restaurant_id: restaurantId, items,
+    delivery_address: deliveryAddress, food_total: subtotal, delivery_fee: DELIVERY_FEE,
+    platform_cut: PLATFORM_CUT, runner_earnings: RUNNER_EARNINGS, status: 'pending', broadcast_count: 0,
+  }).select().single()
+  
+  if (orderError) { setError('Order error: ' + orderError.message + ' | code: ' + orderError.code); setLoading(false); return }
+  if (!order) { setError('Order created but no data returned'); setLoading(false); return }
+  
+  const res = await fetch('/api/payments/init', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: order.id, amount: total, email: profile?.email || user.email }) })
+  const result = await res.json()
+  
+  if (!res.ok || result.error) { setError('Payment error: ' + (result.error || result.message || JSON.stringify(result))); setLoading(false); return }
+  
+  clearCart()
+  window.location.href = result.authorization_url
+}
 
   const dark = { bg: '#0C0B09', card: '#1A1917', border: '#2A2825', text: 'white', muted: '#666' }
 

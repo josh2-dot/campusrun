@@ -108,7 +108,6 @@ export default function CheckoutPage() {
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
-        order_ref:       '',
         customer_id:     user.id,
         restaurant_id:   restaurantId,
         items,
@@ -127,9 +126,9 @@ export default function CheckoutPage() {
       .single()
 
     if (orderError) {
-  setError(`${orderError.message} (${orderError.code || 'no-code'})`)
-  setLoading(false); return
-}
+      setError("Couldn't place your order. Try again or check your connection.")
+      setLoading(false); return
+    }
 
     const res = await fetch('/api/payments/init', {
       method: 'POST',

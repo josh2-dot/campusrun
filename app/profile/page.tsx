@@ -1,6 +1,7 @@
 'use client'
 
 import { AppTutorial } from '@/components/ui/AppTutorial'
+import { InstallButton } from '@/components/ui/InstallPrompt'
 import { getPushState, subscribePush, unsubscribePush } from '@/lib/push'
 import { Bell, BellOff } from 'lucide-react'
 
@@ -319,6 +320,9 @@ const { lastAddress } = useCartStore()
             )}
           </button>
         )}
+
+        {/* ── INSTALL APP ── */}
+        <InstallButton />
 
         {/* ── SHARE THE APP ── */}
         <button

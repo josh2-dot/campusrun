@@ -213,3 +213,107 @@ export function InstallPrompt() {
     </>
   )
 }
+
+/* ─────────────────────────────────────────────────────────────
+   InstallButton — manual trigger from the profile page.
+   Captures beforeinstallprompt globally so we can fire it on tap.
+   On iOS, shows a sheet with manual Add-to-Home-Screen instructions.
+   Hides if app is already installed (display-mode: standalone).
+   ───────────────────────────────────────────────────────────── */
+
+let cachedPrompt: BeforeInstallPromptEvent | null = null
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault()
+    cachedPrompt = e as BeforeInstallPromptEvent
+  })
+}
+
+export function InstallButton() {
+  const [installed, setInstalled] = useState(false)
+  const [showIOSSheet, setShowIOSSheet] = useState(false)
+  const [supported, setSupported] = useState(true)
+
+  useEffect(() => {
+    if (isInStandaloneMode()) {
+      setInstalled(true)
+      return
+    }
+    // On unsupported browsers (e.g. desktop Safari, Firefox without PWA), hide
+    const ua = navigator.userAgent
+    const isIOSSafari = /iPhone|iPad|iPod/.test(ua) && !/CriOS|FxiOS/.test(ua)
+    if (!cachedPrompt && !isIOSSafari) {
+      // Wait a moment in case event fires after mount
+      setTimeout(() => {
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
+        if (!cachedPrompt && !isIOS) setSupported(false)
+      }, 1500)
+    }
+  }, [])
+
+  async function handleClick() {
+    if (cachedPrompt) {
+      await cachedPrompt.prompt()
+      const { outcome } = await cachedPrompt.userChoice
+      if (outcome === 'accepted') {
+        setInstalled(true)
+        cachedPrompt = null
+      }
+      return
+    }
+    // iOS — show manual instructions
+    setShowIOSSheet(true)
+  }
+
+  if (installed || !supported) return null
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        className="press"
+        style={{ width: '100%', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 16, padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}
+      >
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,107,43,0.12)', color: 'var(--accent, #FF6B2B)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 20 }}>
+          📲
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontWeight: 800, fontSize: 14, color: 'white', margin: 0 }}>Install CampusRun</p>
+          <p style={{ fontSize: 12, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '2px 0 0' }}>Add to home screen — opens like a real app</p>
+        </div>
+        <span style={{ color: 'var(--ink-3, #6B6660)', fontSize: 18 }}>›</span>
+      </button>
+
+      {showIOSSheet && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setShowIOSSheet(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', maxWidth: 430, margin: '0 auto', animation: 'crFadeIn 0.2s ease' }}
+        >
+          <style>{`@keyframes crFadeIn { from { opacity: 0 } to { opacity: 1 } } @keyframes crSlideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }`}</style>
+          <div style={{ width: '100%', background: 'var(--bg-1, #1A1917)', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: '14px 24px 36px', border: '1px solid var(--line, #2A2825)', borderBottom: 'none', animation: 'crSlideUp 0.25s ease', fontFamily: "'Nunito', system-ui, sans-serif" }}>
+            <div style={{ width: 36, height: 4, background: 'var(--line, #2A2825)', borderRadius: 2, margin: '0 auto 18px' }} />
+            <p className="label-cap" style={{ color: 'var(--accent, #FF6B2B)', fontSize: 10, margin: '0 0 6px' }}>Install on iPhone</p>
+            <h2 className="font-display" style={{ fontSize: 22, color: 'white', margin: '0 0 14px' }}>3 quick steps</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+              {[
+                { n: '1', title: 'Tap the Share button', body: 'The square with the arrow pointing up — at the bottom of Safari.' },
+                { n: '2', title: 'Scroll and tap "Add to Home Screen"', body: 'You\'ll see the option in the action sheet.' },
+                { n: '3', title: 'Tap "Add"', body: 'CampusRun will appear on your home screen like any app.' },
+              ].map(step => (
+                <div key={step.n} style={{ display: 'flex', gap: 12 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent, #FF6B2B)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 13, flexShrink: 0 }}>{step.n}</div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 800, fontSize: 14, color: 'white', margin: 0 }}>{step.title}</p>
+                    <p style={{ fontSize: 12, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '2px 0 0', lineHeight: 1.5 }}>{step.body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setShowIOSSheet(false)} style={{ width: '100%', background: 'transparent', border: '1px solid var(--line, #2A2825)', borderRadius: 14, padding: '12px', color: 'var(--ink-2, #A09A8E)', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Got it</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}

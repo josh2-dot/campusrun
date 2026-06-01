@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -20,7 +20,7 @@ interface SearchResult {
   restaurant: Restaurant
 }
 
-export default function HomePage() {
+function HomeContent() {
   const router       = useRouter()
   const searchParams = useSearchParams()
 
@@ -505,6 +505,13 @@ export default function HomePage() {
       {showTutorial && <AppTutorial onClose={() => setShowTutorial(false)} />}
       <BottomNav active="home" />
     </div>
+  )
+}
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#0C0B09' }} />}>
+      <HomeContent />
+    </Suspense>
   )
 }
 

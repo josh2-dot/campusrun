@@ -127,9 +127,9 @@ export default function CheckoutPage() {
       .single()
 
     if (orderError) {
-      setError("Couldn't place your order. Try again or check your connection.")
-      setLoading(false); return
-    }
+  setError(`${orderError.message} (${orderError.code || 'no-code'})`)
+  setLoading(false); return
+}
 
     const res = await fetch('/api/payments/init', {
       method: 'POST',

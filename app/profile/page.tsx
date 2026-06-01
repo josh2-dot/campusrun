@@ -1,6 +1,8 @@
 'use client'
 
 import { AppTutorial } from '@/components/ui/AppTutorial'
+import { getPushState, subscribePush, unsubscribePush } from '@/lib/push'
+import { Bell, BellOff } from 'lucide-react'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -30,10 +32,30 @@ const { lastAddress } = useCartStore()
   const [user, setUser] = useState<ProfileUser | null>(null)
   const [showShare,    setShowShare]    = useState(false)
   const [showTutorial, setShowTutorial] = useState(false)
+  const [pushState,    setPushState]    = useState<'unsupported' | 'denied' | 'off' | 'on' | 'loading'>('loading')
+  const [pushSaving,   setPushSaving]   = useState(false)
   const [runnerAppStatus, setRunnerAppStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+
+  useEffect(() => {
+    getPushState().then(s => setPushState(s)).catch(() => setPushState('off'))
+  }, [])
+
+  async function togglePush() {
+    if (pushSaving) return
+    setPushSaving(true)
+    if (pushState === 'on') {
+      const { ok } = await unsubscribePush()
+      if (ok) setPushState('off')
+    } else if (pushState === 'off') {
+      const { ok, error } = await subscribePush()
+      if (ok) setPushState('on')
+      else if (error) alert(error)
+    }
+    setPushSaving(false)
+  }
 
   useEffect(() => {
     async function load() {
@@ -266,6 +288,37 @@ const { lastAddress } = useCartStore()
           </a>
         </div>
 
+
+        {/* ── NOTIFICATIONS TOGGLE ── */}
+        {pushState !== 'unsupported' && pushState !== 'loading' && (
+          <button
+            onClick={togglePush}
+            disabled={pushSaving || pushState === 'denied'}
+            className="press"
+            style={{ width: '100%', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 16, padding: '14px 16px', cursor: pushState === 'denied' ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', opacity: pushSaving ? 0.6 : 1 }}
+          >
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: pushState === 'on' ? 'rgba(29,185,84,0.12)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: pushState === 'on' ? '#1DB954' : '#6B6660' }}>
+              {pushState === 'on' ? <Bell size={20} /> : <BellOff size={20} />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontWeight: 800, fontSize: 14, color: 'white', margin: 0 }}>
+                {pushState === 'denied' ? 'Notifications blocked' : pushState === 'on' ? 'Notifications on' : 'Enable notifications'}
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '2px 0 0' }}>
+                {pushState === 'denied'
+                  ? 'Allow in your browser/phone settings to re-enable'
+                  : pushState === 'on'
+                  ? 'You\'ll hear about order updates and lunch picks'
+                  : 'Order updates, runner alerts, daily picks'}
+              </p>
+            </div>
+            {pushState !== 'denied' && (
+              <div style={{ width: 38, height: 22, borderRadius: 12, background: pushState === 'on' ? '#1DB954' : '#2A2825', position: 'relative', transition: 'background 0.2s' }}>
+                <div style={{ position: 'absolute', top: 2, left: pushState === 'on' ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left 0.2s' }} />
+              </div>
+            )}
+          </button>
+        )}
 
         {/* ── SHARE THE APP ── */}
         <button

@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { getPushState, subscribePush, unsubscribePush } from '@/lib/push'
+import { Bell, BellOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { RunnerProfile } from '@/types'
@@ -34,6 +36,8 @@ export default function RunnerProfilePage() {
   const [strikes, setStrikes] = useState<{ reason: string; created_at: string }[]>([])
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([])
   const [ratings, setRatings] = useState<{ stars: number; comment?: string; created_at: string }[]>([])
+  const [pushState,  setPushState]  = useState<'unsupported' | 'denied' | 'off' | 'on' | 'loading'>('loading')
+  const [pushSaving, setPushSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // Payout sheet
@@ -41,6 +45,24 @@ export default function RunnerProfilePage() {
   const [form, setForm] = useState({ bankName: '', accountNumber: '', accountName: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitDone, setSubmitDone] = useState(false)
+
+  useEffect(() => {
+    getPushState().then(s => setPushState(s)).catch(() => setPushState('off'))
+  }, [])
+
+  async function togglePush() {
+    if (pushSaving) return
+    setPushSaving(true)
+    if (pushState === 'on') {
+      const { ok } = await unsubscribePush()
+      if (ok) setPushState('off')
+    } else if (pushState === 'off') {
+      const { ok, error } = await subscribePush()
+      if (ok) setPushState('on')
+      else if (error) alert(error)
+    }
+    setPushSaving(false)
+  }
 
   useEffect(() => {
     async function load() {
@@ -297,6 +319,36 @@ export default function RunnerProfilePage() {
             </p>
           )}
         </div>
+
+        {/* ── NOTIFICATIONS TOGGLE ── */}
+        {pushState !== 'unsupported' && pushState !== 'loading' && (
+          <button
+            onClick={togglePush}
+            disabled={pushSaving || pushState === 'denied'}
+            style={{ width: '100%', background: 'white', border: '1px solid #E8E2D8', borderRadius: 16, padding: '14px 16px', cursor: pushState === 'denied' ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', opacity: pushSaving ? 0.6 : 1, marginBottom: 12 }}
+          >
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: pushState === 'on' ? 'rgba(29,185,84,0.12)' : '#F4F0E8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: pushState === 'on' ? '#1DB954' : '#8B857B' }}>
+              {pushState === 'on' ? <Bell size={20} /> : <BellOff size={20} />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontWeight: 800, fontSize: 14, color: '#15130F', margin: 0 }}>
+                {pushState === 'denied' ? 'Notifications blocked' : pushState === 'on' ? 'Notifications on' : 'Enable notifications'}
+              </p>
+              <p style={{ fontSize: 12, color: '#8B857B', fontWeight: 600, margin: '2px 0 0' }}>
+                {pushState === 'denied'
+                  ? 'Allow in your browser/phone settings to re-enable'
+                  : pushState === 'on'
+                  ? 'You\'ll hear about new orders the moment they drop'
+                  : 'Critical for runners \u2014 new order alerts'}
+              </p>
+            </div>
+            {pushState !== 'denied' && (
+              <div style={{ width: 38, height: 22, borderRadius: 12, background: pushState === 'on' ? '#1DB954' : '#E0DACE', position: 'relative', transition: 'background 0.2s' }}>
+                <div style={{ position: 'absolute', top: 2, left: pushState === 'on' ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+              </div>
+            )}
+          </button>
+        )}
 
         {/* Sign out */}
         <button onClick={async () => { await supabase.auth.signOut(); router.push('/') }} style={{ width: '100%', background: 'white', color: '#FF3B30', fontWeight: 800, fontSize: 15, padding: '16px', borderRadius: 16, border: '1px solid #E8E2D8', cursor: 'pointer', fontFamily: 'inherit' }}>

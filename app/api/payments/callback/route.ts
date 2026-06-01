@@ -67,7 +67,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL('/home', request.url))
+  // ── Payment cancelled / failed — redirect home with feedback ──
+  // Paystack returns `status` as 'abandoned', 'failed', or similar.
+  // Order stays in 'pending' status; watchdog JOB 0 will cancel it after 15 min,
+  // but we surface immediate feedback so the customer knows what happened.
+  const failedOrderId = data?.metadata?.order_id
+  const url = new URL('/home', request.url)
+  url.searchParams.set('payment', 'cancelled')
+  if (failedOrderId) url.searchParams.set('order', String(failedOrderId))
+  return NextResponse.redirect(url)
 }
 
 async function triggerAutoAllocation(orderId: string, supabase: ReturnType<typeof createAdminClient>) {

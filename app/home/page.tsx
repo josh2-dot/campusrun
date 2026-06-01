@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { initPush } from '@/lib/push'
@@ -21,7 +21,48 @@ interface SearchResult {
 }
 
 export default function HomePage() {
-  const router = useRouter()
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+
+  // Cancelled payment banner — Paystack redirected with ?payment=cancelled&order=<id>
+  useEffect(() => {
+    const payment = searchParams.get('payment')
+    const orderId = searchParams.get('order')
+    if (payment === 'cancelled' && orderId) {
+      setCancelledOrderId(orderId)
+      // Clean URL so refreshes don't keep showing it
+      const cleanUrl = window.location.pathname
+      window.history.replaceState({}, '', cleanUrl)
+    }
+  }, [searchParams])
+
+  async function cancelPendingOrder() {
+    if (!cancelledOrderId || cancelling) return
+    setCancelling(true)
+    await fetch('/api/orders/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: cancelledOrderId, reason: 'Customer cancelled payment' }),
+    }).catch(() => {})
+    setCancelledOrderId(null)
+    setCancelling(false)
+  }
+
+  async function retryPayment() {
+    if (!cancelledOrderId) return
+    // Re-initialise Paystack with the same order ID
+    try {
+      const res = await fetch('/api/payments/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: cancelledOrderId, retry: true }),
+      })
+      const data = await res.json()
+      if (data?.authorization_url) {
+        window.location.href = data.authorization_url
+      }
+    } catch {}
+  }
 
   // First-time customers: auto-show the tutorial after onboarding
   useEffect(() => {
@@ -42,7 +83,9 @@ export default function HomePage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [favIds, setFavIds] = useState<string[]>([])
   const [fullyBooked,  setFullyBooked]  = useState(false)
-  const [showTutorial, setShowTutorial] = useState(false)
+  const [showTutorial,    setShowTutorial]    = useState(false)
+  const [cancelledOrderId, setCancelledOrderId] = useState<string | null>(null)
+  const [cancelling,       setCancelling]       = useState(false)
   const [featuredItems, setFeaturedItems] = useState<(ReturnType<typeof Object.values>[0] & { restaurant_name?: string })[]>([])
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -322,6 +365,31 @@ export default function HomePage() {
           </>
         ) : (
           <>
+            {/* ── Cancelled payment banner ── */}
+            {cancelledOrderId && (
+              <div style={{ marginBottom: 14, padding: '14px 16px', background: 'rgba(255,184,0,0.08)', border: '1px solid rgba(255,184,0,0.25)', borderRadius: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 18, marginTop: -2 }}>⚠️</span>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 800, fontSize: 14, color: '#FFB800', margin: 0 }}>Payment didn’t go through</p>
+                    <p style={{ fontSize: 12, color: 'var(--ink-2, #A09A8E)', fontWeight: 600, margin: '2px 0 0', lineHeight: 1.4 }}>
+                      Your order is on hold. Try paying again or cancel.
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={retryPayment} className="press"
+                    style={{ flex: 1, background: 'var(--accent, #FF6B2B)', color: 'white', border: 'none', fontWeight: 800, fontSize: 13, padding: '10px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Try paying again
+                  </button>
+                  <button onClick={cancelPendingOrder} disabled={cancelling} className="press"
+                    style={{ flex: '0 0 auto', background: 'transparent', color: 'var(--ink-3, #6B6660)', border: '1px solid var(--line, #2A2825)', fontWeight: 700, fontSize: 13, padding: '10px 14px', borderRadius: 10, cursor: cancelling ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: cancelling ? 0.6 : 1 }}>
+                    Cancel order
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* ── Featured dishes ── */}
             {featuredItems.length > 0 && (
               <div style={{ marginBottom: 18 }}>

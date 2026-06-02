@@ -4,6 +4,19 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+interface RestaurantWithBank extends Restaurant {
+  open_time?:          string | null
+  close_time?:         string | null
+  is_manually_closed?: boolean
+  bank_name?:          string | null
+  account_number?:     string | null
+  account_name?:       string | null
+  pre_order_enabled?:  boolean
+  peak_open_time?:     string | null
+  pre_order_window_minutes?: number
+  post_peak_delay_minutes?: number
+}
+
 import type { Restaurant, MenuItem } from '@/types'
 
 const N = '\u20A6'
@@ -224,6 +237,60 @@ export default function AdminRestaurantsPage() {
               {/* Expanded menu */}
               {isExpanded && (
                 <div style={{ borderTop: '1px solid var(--line, #2A2825)', padding: '12px 16px' }}>
+
+                  {/* Hours config */}
+                  <div style={{ marginBottom: 16, background: 'var(--bg-0, #0C0B09)', borderRadius: 12, padding: '12px 14px', border: '1px solid var(--line, #2A2825)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', fontSize: 9, margin: 0 }}>Open hours</p>
+                      <span style={{ fontSize: 10, color: 'var(--ink-3, #6B6660)', fontWeight: 700 }}>(WAT)</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: 'var(--ink-3, #6B6660)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Opens at</label>
+                        <input type="time"
+                          defaultValue={(r as RestaurantWithBank).open_time?.slice(0,5) ?? ''}
+                          onBlur={async (e) => {
+                            const v = e.target.value
+                            setSaving(r.id)
+                            await api('update_hours', r.id, { open_time: v ? `${v}:00` : null })
+                            await load()
+                            setSaving(null)
+                          }}
+                          style={{ width: '100%', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 8, padding: '8px 10px', color: 'white', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', outline: 'none' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: 'var(--ink-3, #6B6660)', fontWeight: 700, display: 'block', marginBottom: 4 }}>Closes at</label>
+                        <input type="time"
+                          defaultValue={(r as RestaurantWithBank).close_time?.slice(0,5) ?? ''}
+                          onBlur={async (e) => {
+                            const v = e.target.value
+                            setSaving(r.id)
+                            await api('update_hours', r.id, { close_time: v ? `${v}:00` : null })
+                            await load()
+                            setSaving(null)
+                          }}
+                          style={{ width: '100%', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 8, padding: '8px 10px', color: 'white', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', outline: 'none' }} />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        setSaving(r.id)
+                        await api('update_hours', r.id, { is_manually_closed: !(r as RestaurantWithBank).is_manually_closed })
+                        await load()
+                        setSaving(null)
+                      }}
+                      style={{ width: '100%', background: (r as RestaurantWithBank).is_manually_closed ? 'rgba(255,59,48,0.12)' : 'var(--bg-1, #1A1917)', border: `1px solid ${(r as RestaurantWithBank).is_manually_closed ? 'rgba(255,59,48,0.4)' : 'var(--line, #2A2825)'}`, borderRadius: 8, padding: '10px', color: (r as RestaurantWithBank).is_manually_closed ? 'var(--danger, #FF3B30)' : 'var(--ink-2, #A09A8E)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      {(r as RestaurantWithBank).is_manually_closed ? '✕ Force-closed (tap to re-open)' : 'Force-close override'}
+                    </button>
+
+                    {!(r as RestaurantWithBank).open_time && (
+                      <p style={{ fontSize: 10, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '8px 0 0', textAlign: 'center' }}>
+                        No schedule set — only the manual toggle controls this restaurant.
+                      </p>
+                    )}
+                  </div>
 
                   {/* Pre-order config */}
                   <div style={{ marginBottom: 16, background: 'var(--bg-0, #0C0B09)', borderRadius: 12, padding: '12px 14px', border: '1px solid var(--line, #2A2825)' }}>

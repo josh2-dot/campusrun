@@ -103,6 +103,22 @@ export async function POST(request: NextRequest) {
   }
 
     // ── Pre-order config ─────────────────────────────────────
+  if (action === 'update_hours') {
+    const { open_time, close_time, is_manually_closed } = value as {
+      open_time?: string | null
+      close_time?: string | null
+      is_manually_closed?: boolean
+    }
+    const updates: Record<string, unknown> = {}
+    if (open_time !== undefined)          updates.open_time = open_time || null
+    if (close_time !== undefined)         updates.close_time = close_time || null
+    if (is_manually_closed !== undefined) updates.is_manually_closed = is_manually_closed
+    await admin.from('restaurants').update(updates).eq('id', id)
+    // Re-sync is_open immediately so admin sees correct state right after toggling
+    await admin.rpc('sync_restaurant_hours')
+    return NextResponse.json({ success: true })
+  }
+
   if (action === 'update_pre_order') {
     const { pre_order_enabled, peak_open_time, pre_order_window_minutes, post_peak_delay_minutes } = value as {
       pre_order_enabled?: boolean

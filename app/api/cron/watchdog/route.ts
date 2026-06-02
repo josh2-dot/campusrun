@@ -28,9 +28,19 @@ export async function GET(request: NextRequest) {
     stuck_escalated:     0,
     preorder_pushes_sent: 0,
     featured_push_sent: 0,
+    hours_synced: 0,
   }
 
   /* ────────────────────────────────────────────────────────
+     JOB −− Sync restaurant open/closed status with scheduled hours
+     Runs first so subsequent jobs use up-to-date is_open values.
+  ─────────────────────────────────────────── */
+  {
+    const { data: syncCount, error: syncErr } = await supabase.rpc('sync_restaurant_hours')
+    if (!syncErr) results.hours_synced = syncCount ?? 0
+  }
+
+  /* ───────────────────────────────────────────────────────────
      JOB 0 — Cancel stale pending orders (payment never completed)
      Customers who reach checkout but don't pay leave the order in
      'pending' status. Cancel anything older than 15 minutes.

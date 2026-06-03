@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/server'
 import { sendPushToUser, sendPushToAvailableRunners } from '@/lib/send-push'
 import { transferToRestaurant } from '../transfer/restaurant'
+import { captureError } from '@/lib/sentry'
 
 export async function POST(request: NextRequest) {
   const body      = await request.text()
@@ -14,6 +15,10 @@ export async function POST(request: NextRequest) {
     .digest('hex')
 
   if (hash !== signature) {
+    captureError(new Error('Webhook signature validation failed'), {
+      tags:  { event: 'webhook_signature_invalid' },
+      level: 'warning',
+    })
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 

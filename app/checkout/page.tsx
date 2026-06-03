@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useCartStore } from '@/store/cart'
+import { captureError } from '@/lib/sentry'
 import { ChevronLeft, Landmark, MapPin } from 'lucide-react'
 
 const DELIVERY_FEE    = 500
@@ -126,7 +127,26 @@ export default function CheckoutPage() {
       .single()
 
     if (orderError) {
-      setError("Couldn't place your order. Try again or check your connection.")
+      console.error('Order insert failed:', orderError)
+      captureError(orderError, {
+        tags:  { event: 'order_insert_failed' },
+        userId: user?.id,
+        extra: {
+          restaurantId,
+          itemCount: items.length,
+          subtotal,
+          plateFee,
+          deliveryAddress: deliveryAddress.slice(0, 50),
+          pgCode:  orderError.code,
+          pgHint:  orderError.hint,
+          pgDetails: orderError.details,
+        },
+      })
+      setError("Couldn't place your order. Please try again — if it keeps failing, message us on WhatsApp.")
+      setLoading(false); return
+    }
+    if (!order?.id) {
+      setError("Order didn't save properly. Please try again.")
       setLoading(false); return
     }
 
@@ -142,7 +162,14 @@ export default function CheckoutPage() {
 
     const result = await res.json()
 
-    if (result.error) { setError(result.error); setLoading(false); return }
+    if (result.error) {
+      captureError(new Error(result.error), {
+        tags:  { event: 'payment_init_failed' },
+        userId: user?.id,
+        extra: { orderId: order.id, amount: grandTotal, errorMessage: result.error },
+      })
+      setError(result.error); setLoading(false); return
+    }
 
     clearCart()
     window.location.href = result.authorization_url

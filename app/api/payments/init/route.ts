@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { captureError } from '@/lib/sentry'
 
 const ACTIVE_STATUSES = ['pending', 'confirmed', 'awaiting_runner', 'runner_assigned', 'preparing', 'picked_up']
 
@@ -45,6 +46,11 @@ export async function POST(request: NextRequest) {
   const estCost       = parseFloat(String(avgCostResult ?? '3500'))
 
   if (floatBalance - estCost < safetyBuffer) {
+    captureError(new Error('Float depleted, blocked order'), {
+      tags: { event: 'float_depleted' },
+      level: 'warning',
+      extra: { floatBalance, estCost, safetyBuffer },
+    })
     return NextResponse.json({
       error: `We're temporarily at capacity — back to taking orders very soon. Check our WhatsApp status for updates 🙏`,
       code: 'FLOAT_DEPLETED',

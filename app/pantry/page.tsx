@@ -51,10 +51,10 @@ export default function PantryPage() {
   }
 
   function handleDecrement(item: MenuItem) {
-    const current = inCart(item.menu_item_id || item.id)
-    const newQty = Math.max(0, current - 1)
-    updateQuantity(item.menu_item_id || item.id, newQty)
-  }
+  const current = inCart(item.id)
+  const newQty = Math.max(0, current - 1)
+  updateQuantity(item.id, newQty)
+}
 
   // Group items by category for cleaner display
   const grouped = pantryItems.reduce((acc, item) => {

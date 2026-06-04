@@ -52,14 +52,20 @@ export async function GET(request: NextRequest) {
   let dest: string
 
   if (!existing) {
-    // First time — create profile from metadata collected during signup
+    // First time — create profile from metadata
+    // For email/password signup: metadata has full_name, phone, role, matric_number
+    // For Google OAuth: only full_name (from Google), phone is missing
     const role = (meta.role as string) || 'customer'
+    // Detect OAuth providers — google sets meta.iss/provider, name/full_name from profile
+    const isOAuth = !!(meta.iss || meta.provider_id || user.app_metadata?.provider === 'google')
+    const fullName = meta.full_name || meta.name || ''
+    const phone    = meta.phone || ''
 
     const { error: insertErr } = await admin.from('users').insert({
       id:              user.id,
       email:           user.email ?? '',
-      full_name:       meta.full_name ?? '',
-      phone:           meta.phone ?? '',
+      full_name:       fullName,
+      phone,
       role,
       matric_number:   meta.matric_number ?? null,
       is_active:       true,
@@ -67,13 +73,11 @@ export async function GET(request: NextRequest) {
     })
 
     if (insertErr) {
-      // Profile creation failed — redirect to signup with error
       const r = NextResponse.redirect(`${origin}/signup?error=profile_failed`)
       tempResponse.cookies.getAll().forEach(c => r.cookies.set(c.name, c.value, { path: '/' }))
       return r
     }
 
-    // Create runner profile if needed
     if (role === 'runner') {
       await admin.from('runner_profiles').insert({
         user_id: user.id, is_available: false,
@@ -81,17 +85,34 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // next==/verified means they came from email confirmation link
-    dest = next ?? (role === 'runner' ? '/dashboard' : '/verified')
+    // Routing for first-time users:
+    //   - OAuth without phone → /complete-profile to capture missing details
+    //   - Email/password (has phone in meta) → /verified (email confirm flow) or dashboard
+    if (isOAuth || !phone) {
+      dest = '/complete-profile'
+    } else {
+      dest = next ?? (role === 'runner' ? '/dashboard' : '/verified')
+    }
 
   } else {
-    // Returning user — route by role, check onboarding
-    const roleMap: Record<string, string> = {
-      customer: existing.onboarding_done ? '/home' : '/onboarding',
-      runner:   '/dashboard',
-      admin:    '/admin/dashboard',
+    // Returning user — verify profile completeness, route by role
+    // Fetch full profile to check phone (the only field that may be missing for OAuth users)
+    const { data: full } = await admin
+      .from('users')
+      .select('phone, full_name')
+      .eq('id', user.id)
+      .single()
+
+    if (!full?.phone || !full?.full_name) {
+      dest = '/complete-profile'
+    } else {
+      const roleMap: Record<string, string> = {
+        customer: existing.onboarding_done ? '/home' : '/onboarding',
+        runner:   '/dashboard',
+        admin:    '/admin/dashboard',
+      }
+      dest = roleMap[existing.role ?? 'customer'] ?? '/home'
     }
-    dest = roleMap[existing.role ?? 'customer'] ?? '/home'
   }
 
   const finalResponse = NextResponse.redirect(`${origin}${dest}`)

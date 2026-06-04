@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, Mail } from 'lucide-react'
 import { friendlyAuthError } from '@/lib/auth-errors'
+import { GoogleSignInButton } from '@/components/ui/GoogleSignInButton'
 
 function LoginForm() {
   const router       = useRouter()
@@ -197,6 +198,10 @@ function LoginForm() {
               <Mail size={18} />
               {magicLoading ? 'Sending…' : 'Email me a magic link'}
             </button>
+
+            <div style={{ marginTop: 8 }}>
+              <GoogleSignInButton mode="signin" />
+            </div>
           </>
         )}
 

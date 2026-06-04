@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff } from 'lucide-react'
 import { friendlySignupError, validateEmail, validateFullName, validatePassword, validatePhone } from '@/lib/auth-errors'
+import { GoogleSignInButton } from '@/components/ui/GoogleSignInButton'
 import type { UserRole } from '@/types'
 
 export default function SignupForm() {
@@ -247,6 +248,10 @@ export default function SignupForm() {
             {loading ? 'Creating account…' : <>Create account <span style={{ fontSize: 18 }}>→</span></>}
           </button>
         </form>
+
+        <div style={{ marginTop: 18 }}>
+          <GoogleSignInButton mode="signup" />
+        </div>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#3A3830', fontWeight: 600, marginTop: 24 }}>
           Already have an account?{' '}<Link href="/login" style={{ color: '#FF6B2B', fontWeight: 800 }}>Log in</Link>

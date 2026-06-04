@@ -16,6 +16,10 @@ export default function RestaurantPage() {
   const { addItem, items, restaurantId: cartRestaurantId, totalItems, foodTotal, updateQuantity } = useCartStore()
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null)
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [pantryItems, setPantryItems] = useState<MenuItem[]>([])
+  const [pantryRestId, setPantryRestId] = useState<string | null>(null)
+  const [pantryRestName, setPantryRestName] = useState<string>('')
+  const [showPantry, setShowPantry] = useState(false)
   const [activeCategory, setActiveCategory] = useState('All')
   const [loading, setLoading] = useState(true)
   const [confirmSwitch, setConfirmSwitch] = useState<MenuItem | null>(null)
@@ -323,7 +327,7 @@ function handleAdd(item: MenuItem) {
         {/* "Add drinks?" inline pantry */}
         {pantryRestId && pantryItems.length > 0 && (
           <div style={{ marginTop: 24, marginBottom: 100 }}>
-            <button onClick={() => setShowPantry(s => !s)}
+            <button onClick={() => setShowPantry((s: boolean) => !s)}
               style={{ width: '100%', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 14, padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 12, color: 'white' }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,107,43,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>+</div>
               <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
@@ -340,7 +344,7 @@ function handleAdd(item: MenuItem) {
                   const qty = inCart?.quantity ?? 0
                   return (
                     <div key={p.id}
-                      style={{ background: 'var(--bg-1, #1A1917)', border: \`1px solid ${qty > 0 ? 'rgba(255,107,43,0.3)' : 'var(--line, #2A2825)'}\`, borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      style={{ background: 'var(--bg-1, #1A1917)', border: `1px solid ${qty > 0 ? 'rgba(255,107,43,0.3)' : 'var(--line, #2A2825)'}`, borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 42, height: 42, borderRadius: 8, background: 'var(--bg-2, #26241F)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
                         {p.image_url ? (
                           /* eslint-disable-next-line @next/next/no-img-element */

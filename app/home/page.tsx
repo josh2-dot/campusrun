@@ -115,10 +115,13 @@ function HomeContent() {
     for (const prev of order.items) {
       const cur = available.find(m => m.id === prev.menu_item_id)
       if (!cur) continue
+      // Preserve pantry flag and original options on reorder
+      const wasPantry = (prev as { options?: { is_pantry?: boolean } }).options?.is_pantry
       for (let i = 0; i < prev.quantity; i++) {
         addItem({ id: cur.id, name: cur.name, price: cur.price, is_available: true,
           restaurant_id: restaurant.id, category: '', description: '' },
-          restaurant.id, restaurant.name)
+          restaurant.id, restaurant.name,
+          wasPantry ? { is_pantry: true } : undefined)
       }
     }
     setReordering(false)
@@ -174,36 +177,6 @@ function HomeContent() {
           .map(item => ({ item, restaurant: restMap[item.restaurant_id] }))
           .filter(r => r.restaurant)
       )
-
-            {/* -- Pantry strip -- */}
-            {pantry && pantryPreview.length > 0 && (
-              <div style={{ marginBottom: 18 }}>
-                <button onClick={() => router.push('/pantry')} className="press"
-                  style={{ width: '100%', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, fontFamily: 'inherit' }}>
-                  <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', fontSize: 10, margin: 0 }}>Snacks &amp; drinks</p>
-                  <span style={{ fontSize: 11, color: 'var(--accent, #FF6B2B)', fontWeight: 800 }}>Browse all &rsaquo;</span>
-                </button>
-                <div className="scroll-hide" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
-                  {pantryPreview.map(item => (
-                    <button key={item.id} onClick={() => router.push('/pantry')} className="press"
-                      style={{ flexShrink: 0, width: 110, background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 14, overflow: 'hidden', cursor: 'pointer', fontFamily: 'inherit', padding: 0, textAlign: 'left' as const }}>
-                      <div style={{ width: '100%', height: 80, background: 'var(--bg-2, #26241F)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        {item.image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.image_url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                        ) : (
-                          <span style={{ fontSize: 28 }}>&#x1F964;</span>
-                        )}
-                      </div>
-                      <div style={{ padding: '8px 10px 10px' }}>
-                        <p style={{ fontWeight: 800, fontSize: 12, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</p>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent, #FF6B2B)', margin: '2px 0 0' }}>&#8358;{item.price.toLocaleString()}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
       // Featured dishes — filter is_featured, reuse restMap
       setFeaturedItems(
@@ -427,6 +400,36 @@ function HomeContent() {
                     style={{ flex: '0 0 auto', background: 'transparent', color: 'var(--ink-3, #6B6660)', border: '1px solid var(--line, #2A2825)', fontWeight: 700, fontSize: 13, padding: '10px 14px', borderRadius: 10, cursor: cancelling ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: cancelling ? 0.6 : 1 }}>
                     Cancel order
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Pantry strip */}
+            {pantry && pantryPreview.length > 0 && (
+              <div style={{ marginBottom: 18 }}>
+                <button onClick={() => router.push('/pantry')} className="press"
+                  style={{ width: '100%', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, fontFamily: 'inherit' }}>
+                  <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', fontSize: 10, margin: 0 }}>Snacks &amp; drinks</p>
+                  <span style={{ fontSize: 11, color: 'var(--accent, #FF6B2B)', fontWeight: 800 }}>Browse all &rsaquo;</span>
+                </button>
+                <div className="scroll-hide" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                  {pantryPreview.map(item => (
+                    <button key={item.id} onClick={() => router.push('/pantry')} className="press"
+                      style={{ flexShrink: 0, width: 110, background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 14, overflow: 'hidden', cursor: 'pointer', fontFamily: 'inherit', padding: 0, textAlign: 'left' as const }}>
+                      <div style={{ width: '100%', height: 80, background: 'var(--bg-2, #26241F)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                        {item.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={item.image_url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        ) : (
+                          <span style={{ fontSize: 28 }}>&#x1F964;</span>
+                        )}
+                      </div>
+                      <div style={{ padding: '8px 10px 10px' }}>
+                        <p style={{ fontWeight: 800, fontSize: 12, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</p>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent, #FF6B2B)', margin: '2px 0 0' }}>₦{item.price.toLocaleString()}</p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}

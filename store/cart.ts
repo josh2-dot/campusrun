@@ -40,13 +40,15 @@ export const useCartStore = create<CartStore>()(
        // Pantry items bypass the restaurant conflict — they can be added alongside any food order
        const isPantry = !!options?.is_pantry
 
-       // Clear cart if switching restaurants
+       // Clear food items if switching restaurants — but KEEP pantry items
+       // (drinks/snacks travel with the user across any restaurant)
         if (!isPantry && currentRestaurantId && currentRestaurantId !== restaurantId) {
+          const pantryOnly = items.filter(i => i.options?.is_pantry)
           set({
             restaurantId,
             restaurantName,
             wantPlate: true,
-            items: [{
+            items: [...pantryOnly, {
               menu_item_id: menuItem.id,
               name: menuItem.name,
               price: menuItem.price,
@@ -74,8 +76,9 @@ export const useCartStore = create<CartStore>()(
           })
         } else {
           set({
-            restaurantId,
-            restaurantName,
+            // Don't touch restaurantId/restaurantName when adding pantry items —
+            // those belong to the food restaurant only
+            ...(isPantry ? {} : { restaurantId, restaurantName }),
             items: [...items, {
               menu_item_id: menuItem.id,
               name: menuItem.name,

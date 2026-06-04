@@ -57,10 +57,16 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (items.length === 0) { router.push('/home'); return }
-    if (!restaurantId)      { router.push('/home'); return }
+    // restaurantId may be null for pantry-only orders — we'll look it up below
 
     async function validate() {
       setValidating(true)
+
+      // Pantry-only orders skip the food-restaurant open check
+      const isPantryOnly = !restaurantId
+      if (isPantryOnly) {
+        setValidating(false); return
+      }
 
       const { data: restaurant } = await supabase
         .from('restaurants').select('is_open, name').eq('id', restaurantId).single()
@@ -74,9 +80,11 @@ export default function CheckoutPage() {
 
       setUnavailableItems((menuItems ?? []).filter(m => !m.is_available).map(m => m.name))
       setValidating(false)
-      // Pre-order window state for this restaurant
-      fetch(`/api/restaurants/pre-order-window?restaurant_id=${restaurantId}`)
-        .then(r => r.json()).then(setPreOrderPhase).catch(() => {})
+      // Pre-order window state for this restaurant (skip if pantry-only)
+      if (restaurantId) {
+        fetch(`/api/restaurants/pre-order-window?restaurant_id=${restaurantId}`)
+          .then(r => r.json()).then(setPreOrderPhase).catch(() => {})
+      }
     }
 
     validate()
@@ -95,12 +103,24 @@ export default function CheckoutPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: restaurant } = await supabase
-      .from('restaurants').select('is_open').eq('id', restaurantId).single()
-
-    if (!restaurant?.is_open) {
-      setError('This restaurant just closed. Please choose another restaurant.')
-      setRestaurantOpen(false); setLoading(false); return
+    // For pantry-only orders, use the pantry restaurant's ID for the insert
+    let effectiveRestaurantId = restaurantId
+    if (!effectiveRestaurantId) {
+      const { data: pantryRest } = await supabase
+        .from('restaurants').select('id').eq('is_pantry', true).limit(1).maybeSingle()
+      if (!pantryRest) {
+        setError('Pantry is temporarily unavailable. Please try again later.')
+        setLoading(false); return
+      }
+      effectiveRestaurantId = pantryRest.id
+    } else {
+      // Re-check the food restaurant is still open
+      const { data: restaurant } = await supabase
+        .from('restaurants').select('is_open').eq('id', restaurantId).single()
+      if (!restaurant?.is_open) {
+        setError('This restaurant just closed. Please choose another restaurant.')
+        setRestaurantOpen(false); setLoading(false); return
+      }
     }
 
     const { data: profile } = await supabase
@@ -110,7 +130,7 @@ export default function CheckoutPage() {
       .from('orders')
       .insert({
         customer_id:     user.id,
-        restaurant_id:   restaurantId,
+        restaurant_id:   effectiveRestaurantId,
         items,
         delivery_address: deliveryAddress.trim(),
         food_total:      subtotal + plateFee,
@@ -229,7 +249,7 @@ export default function CheckoutPage() {
           <ChevronLeft size={18} />
         </button>
         <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', margin: 0, fontSize: 10 }}>Checkout</p>
-        <h1 className="font-display" style={{ fontSize: 24, margin: '4px 0 0', color: 'white' }}>{restaurantName}</h1>
+        <h1 className="font-display" style={{ fontSize: 24, margin: '4px 0 0', color: 'white' }}>{restaurantName || 'Pantry order'}</h1>
       </div>
 
       <div className="scroll-hide" style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>

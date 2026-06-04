@@ -237,7 +237,7 @@ export default function CheckoutPage() {
         {/* Items */}
         <section style={{ background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 16, padding: 16 }}>
           <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', margin: '0 0 8px', fontSize: 10 }}>Your order</p>
-          {items.map(item => {
+          {items.filter(i => !i.options?.is_pantry).map(item => {
             const portions = item.options?.portions
             const hasPortions = portions && Array.isArray(portions)
             
@@ -301,6 +301,28 @@ export default function CheckoutPage() {
             )
           })}
           
+          {/* Pantry items in this order */}
+          {items.filter(i => i.options?.is_pantry).length > 0 && (
+            <>
+              <div style={{ padding: '12px 0 6px', borderTop: '1px solid var(--line, #2A2825)', marginTop: 8 }}>
+                <p className="label-cap" style={{ color: 'var(--accent, #FF6B2B)', fontSize: 10, margin: 0 }}>From the Pantry</p>
+              </div>
+              {items.filter(i => i.options?.is_pantry).map(item => (
+                <div key={item.menu_item_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid var(--line-soft, #1F1D1B)' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2, #A09A8E)' }}>
+                    {item.name} ×{item.quantity}
+                    {item.quantity > 1 && (
+                      <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--ink-3, #6B6660)', fontWeight: 500 }}>
+                        (₦{item.price.toLocaleString()} each)
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>₦{(item.price * item.quantity).toLocaleString()}</span>
+                </div>
+              ))}
+            </>
+          )}
+
           {wantPlate && (
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid var(--line-soft, #1F1D1B)' }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2, #A09A8E)' }}>

@@ -37,9 +37,11 @@ export const useCartStore = create<CartStore>()(
 
       addItem: (menuItem, restaurantId, restaurantName, options) => {
        const { items, restaurantId: currentRestaurantId } = get()
+       // Pantry items bypass the restaurant conflict — they can be added alongside any food order
+       const isPantry = !!options?.is_pantry
 
        // Clear cart if switching restaurants
-        if (currentRestaurantId && currentRestaurantId !== restaurantId) {
+        if (!isPantry && currentRestaurantId && currentRestaurantId !== restaurantId) {
           set({
             restaurantId,
             restaurantName,
@@ -142,7 +144,8 @@ export const useCartStore = create<CartStore>()(
       plateFeeTotal: () => {
       const { wantPlate, items } = get()
       if (!wantPlate) return 0
-      return items.reduce((sum, i) => sum + i.quantity, 0) * PLATE_FEE
+      // Pantry items (drinks/snacks) never get a plate fee
+      return items.filter(i => !i.options?.is_pantry).reduce((sum, i) => sum + i.quantity, 0) * PLATE_FEE
       },
       setWantPlate: (want) => set({ wantPlate: want }),
     }),

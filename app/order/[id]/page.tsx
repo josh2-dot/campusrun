@@ -389,19 +389,54 @@ export default function RunnerOrderPage() {
             )
           })}
         </div>
-        <div style={S.card}>
-          <p style={S.cardTitle}>From {restaurant?.name}</p>
-          <OrderItemList
-            items={order.items ?? []}
-            theme="dark"
-            showPrices={true}
-          />
-          {/* Total — food only, what runner pays at restaurant */}
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 10, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.5)' }}>Total</span>
-            <span className="font-display" style={{ fontSize: 22, color: '#FF6B2B' }}>₦{(order.food_total ?? 0).toLocaleString()}</span>
+        {/* Food pickup card */}
+        {(order.items ?? []).filter((i: { options?: { is_pantry?: boolean } }) => !i.options?.is_pantry).length > 0 && (
+          <div style={S.card}>
+            <p style={S.cardTitle}>Pickup 1 · From {restaurant?.name}</p>
+            <OrderItemList
+              items={(order.items ?? []).filter((i: { options?: { is_pantry?: boolean } }) => !i.options?.is_pantry)}
+              theme="dark"
+              showPrices={true}
+            />
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 10, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.5)' }}>Pay restaurant</span>
+              <span className="font-display" style={{ fontSize: 22, color: '#FF6B2B' }}>₦{(() => {
+                const foodItems = (order.items ?? []).filter((i: { options?: { is_pantry?: boolean } }) => !i.options?.is_pantry)
+                const total = foodItems.reduce((sum: number, i: { price: number; quantity: number; options?: { portions?: Array<{ price: number; quantity: number }>; addons?: Array<{ price: number; quantity: number; portions?: Array<{ price: number; quantity: number }> }> } }) => {
+                  const portions = i.options?.portions
+                  const base = (portions && Array.isArray(portions)) ? portions.reduce((s, p) => s + p.price * p.quantity, 0) : i.price * i.quantity
+                  const addons = i.options?.addons ?? []
+                  const addonTotal = addons.reduce((s, a) => {
+                    if (a.portions && a.portions.length) return s + a.portions.reduce((ss, p) => ss + p.price * p.quantity, 0)
+                    return s + a.price * a.quantity
+                  }, 0)
+                  return sum + base + addonTotal
+                }, 0)
+                return total.toLocaleString()
+              })()}</span>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Pantry pickup card */}
+        {(order.items ?? []).filter((i: { options?: { is_pantry?: boolean } }) => i.options?.is_pantry).length > 0 && (
+          <div style={S.card}>
+            <p style={S.cardTitle}>Pickup 2 · Snacks &amp; Drinks (any nearby shop)</p>
+            <OrderItemList
+              items={(order.items ?? []).filter((i: { options?: { is_pantry?: boolean } }) => i.options?.is_pantry)}
+              theme="dark"
+              showPrices={true}
+            />
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 10, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.5)' }}>Pay shop</span>
+              <span className="font-display" style={{ fontSize: 22, color: '#FF6B2B' }}>₦{(() => {
+                const pantryItems = (order.items ?? []).filter((i: { options?: { is_pantry?: boolean } }) => i.options?.is_pantry)
+                const total = pantryItems.reduce((sum: number, i: { price: number; quantity: number }) => sum + i.price * i.quantity, 0)
+                return total.toLocaleString()
+              })()}</span>
+            </div>
+          </div>
+        )}
 
         {/* Customer note */}
         {(order as Order & { order_notes?: string }).order_notes && (

@@ -54,9 +54,25 @@ export default function RestaurantPage() {
         supabase.from('restaurants').select('*').eq('id', id).single(),
         supabase.from('menu_items').select('*').eq('restaurant_id', id).eq('is_available', true).order('category'),
       ])
+      if (rest?.is_pantry) {
+        router.replace('/pantry')
+        return
+      }
       setRestaurant(rest)
       setMenuItems(its ?? [])
       setLoading(false)
+
+      // Load pantry items for the inline 'Add drinks?' section
+      const { data: pantryRest } = await supabase
+        .from('restaurants').select('id, name').eq('is_pantry', true).limit(1).maybeSingle()
+      if (pantryRest) {
+        setPantryRestId(pantryRest.id)
+        setPantryRestName(pantryRest.name)
+        const { data: pItems } = await supabase
+          .from('menu_items').select('*')
+          .eq('restaurant_id', pantryRest.id).eq('is_available', true).order('category')
+        setPantryItems(pItems ?? [])
+      }
       fetch(`/api/restaurants/pre-order-window?restaurant_id=${id}`)
         .then(r => r.json()).then(setPreOrderPhase).catch(() => {})
     }
@@ -302,6 +318,60 @@ function handleAdd(item: MenuItem) {
           </div>
         )}
       </div>
+
+
+        {/* "Add drinks?" inline pantry */}
+        {pantryRestId && pantryItems.length > 0 && (
+          <div style={{ marginTop: 24, marginBottom: 100 }}>
+            <button onClick={() => setShowPantry(s => !s)}
+              style={{ width: '100%', background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 14, padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 12, color: 'white' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,107,43,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>+</div>
+              <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                <p style={{ fontWeight: 800, fontSize: 14, margin: 0 }}>Add drinks or snacks?</p>
+                <p style={{ fontSize: 11, color: 'var(--ink-3, #6B6660)', fontWeight: 600, margin: '2px 0 0' }}>{pantryItems.length} items · runner picks up from a nearby shop</p>
+              </div>
+              <span style={{ color: 'var(--ink-3, #6B6660)', fontSize: 16, transform: showPantry ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>v</span>
+            </button>
+
+            {showPantry && (
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {pantryItems.map(p => {
+                  const inCart = items.find(i => i.menu_item_id === p.id)
+                  const qty = inCart?.quantity ?? 0
+                  return (
+                    <div key={p.id}
+                      style={{ background: 'var(--bg-1, #1A1917)', border: \`1px solid ${qty > 0 ? 'rgba(255,107,43,0.3)' : 'var(--line, #2A2825)'}\`, borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 42, height: 42, borderRadius: 8, background: 'var(--bg-2, #26241F)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                        {p.image_url ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={p.image_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <span style={{ fontSize: 18 }}>{p.category?.toLowerCase().includes('water') ? '~' : p.category?.toLowerCase().includes('drink') ? '*' : '#'}</span>
+                        )}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontWeight: 800, fontSize: 12, color: 'white', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</p>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent, #FF6B2B)', margin: '2px 0 0' }}>₦{p.price.toLocaleString()}</p>
+                      </div>
+                      {qty === 0 ? (
+                        <button onClick={() => addItem(p, pantryRestId, pantryRestName, { is_pantry: true })} className="press"
+                          style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent, #FF6B2B)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16, fontWeight: 900 }}>+</button>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => updateQuantity(p.id, qty - 1)}
+                            style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--bg-2, #26241F)', color: 'white', border: '1px solid var(--line, #2A2825)', cursor: 'pointer', fontSize: 14, fontWeight: 900 }}>-</button>
+                          <span style={{ fontSize: 14, color: 'white', minWidth: 14, textAlign: 'center', fontWeight: 800 }}>{qty}</span>
+                          <button onClick={() => addItem(p, pantryRestId, pantryRestName, { is_pantry: true })}
+                            style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--accent, #FF6B2B)', color: 'white', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 900 }}>+</button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Cart bar — fixed floating at bottom */}
       {totalItems() > 0 && (

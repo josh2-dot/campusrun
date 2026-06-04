@@ -37,6 +37,7 @@ export interface Restaurant {
   restaurant_rating_count?: number
   created_at: string
   pre_order_enabled?: boolean
+  is_pantry?:         boolean
 }
 
 export interface MenuItem {
@@ -63,6 +64,7 @@ export interface CartItem {
   price: number
   quantity: number
   options?: {
+    is_pantry?: boolean   // pantry items (snacks/drinks) — bypass plate fee + restaurant conflict
     swallow?: 'garri' | 'fufu'
     portions?: Array<{ price: number; quantity: number }>
     // Items bundled onto this plate (protein, extras chosen during portion flow)

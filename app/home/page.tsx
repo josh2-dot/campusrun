@@ -92,6 +92,9 @@ function HomeContent() {
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const featuredRef = useRef<HTMLDivElement>(null)
+  const pantryRef   = useRef<HTMLDivElement>(null)
+  const peekedRef   = useRef(false)  // ensures peek only fires once per session
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
@@ -205,6 +208,34 @@ function HomeContent() {
     }
     load()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Peek-on-mount: subtle scroll-then-back animation that signals "swipe me"
+  // Runs once per session, after data loads, with a brief delay so it doesn't fight page entrance.
+  useEffect(() => {
+    if (peekedRef.current) return
+    if (loading) return
+    if (featuredItems.length === 0 && pantryPreview.length === 0) return
+    peekedRef.current = true
+
+    const PEEK_DISTANCE = 56  // pixels — just enough to reveal the next card edge
+    const PEEK_HOLD     = 700 // ms before scrolling back
+
+    const peekTimer = setTimeout(() => {
+      const targets = [pantryRef.current, featuredRef.current].filter(Boolean) as HTMLDivElement[]
+      targets.forEach(el => {
+        // Only peek if there's actually content to peek at
+        if (el.scrollWidth > el.clientWidth + 20) {
+          el.scrollTo({ left: PEEK_DISTANCE, behavior: 'smooth' })
+        }
+      })
+      const backTimer = setTimeout(() => {
+        targets.forEach(el => el.scrollTo({ left: 0, behavior: 'smooth' }))
+      }, PEEK_HOLD)
+      return () => clearTimeout(backTimer)
+    }, 500)
+
+    return () => clearTimeout(peekTimer)
+  }, [loading, featuredItems.length, pantryPreview.length])
 
   useEffect(() => {
     if (searchOpen) inputRef.current?.focus()
@@ -412,7 +443,7 @@ function HomeContent() {
                   <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', fontSize: 10, margin: 0 }}>Snacks &amp; drinks</p>
                   <span style={{ fontSize: 11, color: 'var(--accent, #FF6B2B)', fontWeight: 800 }}>Browse all &rsaquo;</span>
                 </button>
-                <div className="scroll-hide" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                <div ref={pantryRef} className="scroll-hide" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
                   {pantryPreview.map(item => (
                     <button key={item.id} onClick={() => router.push('/pantry')} className="press"
                       style={{ flexShrink: 0, width: 110, background: 'var(--bg-1, #1A1917)', border: '1px solid var(--line, #2A2825)', borderRadius: 14, overflow: 'hidden', cursor: 'pointer', fontFamily: 'inherit', padding: 0, textAlign: 'left' as const }}>
@@ -441,7 +472,7 @@ function HomeContent() {
                   <p className="label-cap" style={{ color: 'var(--ink-3, #6B6660)', fontSize: 10, margin: 0 }}>Popular dishes</p>
                   <span style={{ fontSize: 10, color: 'var(--accent, #FF6B2B)', fontWeight: 800 }}>{featuredItems.length} dish{featuredItems.length !== 1 ? 'es' : ''}</span>
                 </div>
-                <div className="scroll-hide" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                <div ref={featuredRef} className="scroll-hide" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
                   {featuredItems.map((item: { id: string; name: string; price: number; image_url?: string; restaurant_id: string; restaurant_name?: string }) => (
                     <button
                       key={item.id}

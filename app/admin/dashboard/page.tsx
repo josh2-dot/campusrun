@@ -46,6 +46,10 @@ export default function AdminDashboard() {
   const [analytics,        setAnalytics]        = useState<Analytics | null>(null)
   const [loading,          setLoading]          = useState(true)
   const [dailyCap,         setDailyCap]         = useState(0)
+  const [rainActive,       setRainActive]       = useState(false)
+  const [rainSaving,       setRainSaving]       = useState(false)
+  const [syncingHours,     setSyncingHours]     = useState(false)
+  const [syncFeedback,     setSyncFeedback]     = useState('')
   const [floatBalance,     setFloatBalance]     = useState(0)
   const [floatBuffer,      setFloatBuffer]      = useState(10000)
   const [floatEditing,     setFloatEditing]     = useState(false)
@@ -125,9 +129,11 @@ export default function AdminDashboard() {
     const totalRecentDelivered = delivered30d.length
 
     setAnalytics({ repurchaseRate, repurchaseTotal, repurchaseRepeaters, paymentHealth, unpaidDelivered, clusterRate, clusteredOrders, totalRecentDelivered })
-    // Daily cap
+    // Daily cap + rain status
     try {
       const { data: capRow } = await supabase.from('app_config').select('value').eq('key', 'daily_order_cap').single()
+      const { data: rainRow } = await supabase.from('app_config').select('value').eq('key', 'rain_active').single()
+      setRainActive(rainRow?.value === 'true')
       const cap = parseInt(capRow?.value ?? '0')
       setDailyCap(cap)
       if (cap > 0) {
@@ -163,6 +169,52 @@ export default function AdminDashboard() {
   }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save float balance via the credit_float function (audit logged)
+  async function toggleRain() {
+    if (rainSaving) return
+    setRainSaving(true)
+    const next = !rainActive
+    setRainActive(next)
+    try {
+      const res = await fetch('/api/admin/restaurants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_rain', id: 'global', value: { active: next } }),
+      })
+      if (!res.ok) {
+        setRainActive(!next)
+        const j = await res.json().catch(() => ({}))
+        setSyncFeedback('Rain toggle failed: ' + (j.error ?? 'unknown'))
+        setTimeout(() => setSyncFeedback(''), 4000)
+      }
+    } catch {
+      setRainActive(!next)
+    }
+    setRainSaving(false)
+  }
+
+  async function syncHoursNow() {
+    if (syncingHours) return
+    setSyncingHours(true)
+    setSyncFeedback('')
+    try {
+      const res = await fetch('/api/admin/restaurants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync_hours_now', id: 'global', value: {} }),
+      })
+      const j = await res.json()
+      if (res.ok) {
+        setSyncFeedback('Synced. ' + (j.synced ?? 0) + ' restaurant(s) updated.')
+      } else {
+        setSyncFeedback(j.error ?? 'Sync failed')
+      }
+    } catch (e) {
+      setSyncFeedback('Network error: ' + (e instanceof Error ? e.message : 'unknown'))
+    }
+    setSyncingHours(false)
+    setTimeout(() => setSyncFeedback(''), 6000)
+  }
+
   async function saveFloatBalance(newAmount: number) {
     const diff = newAmount - floatBalance
     if (diff === 0) { setFloatEditing(false); return }
@@ -403,6 +455,43 @@ export default function AdminDashboard() {
           <span style={{ fontSize: 11, color: savingCap ? '#FF6B2B' : 'rgba(255,255,255,0.2)', fontWeight: 700 }}>{savingCap ? 'Saving...' : 'orders/day'}</span>
         </div>
       </div>
+
+      {/* Rain mode + Hours sync */}
+      <div style={{ padding: '10px 16px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {/* Rain toggle */}
+        <button onClick={toggleRain} disabled={rainSaving}
+          style={{ background: rainActive ? 'rgba(74,158,255,0.12)' : '#1A1917', borderRadius: 14, padding: '12px 14px', border: rainActive ? '1px solid rgba(74,158,255,0.4)' : '1px solid #2A2825', display: 'flex', alignItems: 'center', gap: 10, cursor: rainSaving ? 'wait' : 'pointer', fontFamily: 'inherit', textAlign: 'left', opacity: rainSaving ? 0.6 : 1 }}>
+          <span style={{ fontSize: 22 }}>{rainActive ? '☔' : '☀️'}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.3)', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>Rain mode</p>
+            <p style={{ fontSize: 13, fontWeight: 900, color: rainActive ? '#4A9EFF' : 'rgba(255,255,255,0.5)', margin: '2px 0 0' }}>
+              {rainActive ? 'ON' : 'OFF'}
+            </p>
+          </div>
+          <div style={{ width: 36, height: 22, borderRadius: 12, background: rainActive ? '#4A9EFF' : '#2A2825', position: 'relative', flexShrink: 0 }}>
+            <div style={{ position: 'absolute', top: 2, left: rainActive ? 16 : 2, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left 0.2s' }} />
+          </div>
+        </button>
+
+        {/* Manual hours sync */}
+        <button onClick={syncHoursNow} disabled={syncingHours}
+          style={{ background: '#1A1917', borderRadius: 14, padding: '12px 14px', border: '1px solid #2A2825', display: 'flex', alignItems: 'center', gap: 10, cursor: syncingHours ? 'wait' : 'pointer', fontFamily: 'inherit', textAlign: 'left', opacity: syncingHours ? 0.6 : 1 }}>
+          <span style={{ fontSize: 22 }}>↻</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.3)', margin: 0, textTransform: 'uppercase', letterSpacing: 1 }}>Sync hours</p>
+            <p style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.5)', margin: '2px 0 0' }}>
+              {syncingHours ? 'Working...' : 'Tap to refresh'}
+            </p>
+          </div>
+        </button>
+      </div>
+      {syncFeedback && (
+        <div style={{ padding: '8px 16px 0' }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: syncFeedback.toLowerCase().startsWith('synced') ? '#1DB954' : '#FF6B2B', margin: 0 }}>
+            {syncFeedback}
+          </p>
+        </div>
+      )}
 
       {/* Growth signals */}
       {analytics && (

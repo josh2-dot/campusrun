@@ -113,10 +113,52 @@ export async function POST(request: NextRequest) {
     if (open_time !== undefined)          updates.open_time = open_time || null
     if (close_time !== undefined)         updates.close_time = close_time || null
     if (is_manually_closed !== undefined) updates.is_manually_closed = is_manually_closed
-    await admin.from('restaurants').update(updates).eq('id', id)
-    // Re-sync is_open immediately so admin sees correct state right after toggling
-    await admin.rpc('sync_restaurant_hours')
+
+    // For manual close override: bypass the sync function entirely and set is_open directly
+    // (works even if the sync_restaurant_hours function isn't installed)
+    if (is_manually_closed === true)  updates.is_open = false
+    if (is_manually_closed === false && open_time === undefined && close_time === undefined) {
+      // Re-opening from a force-close — use the function if available, else just set to true
+      // Actual sync happens below
+    }
+
+    const { error: updateErr } = await admin.from('restaurants').update(updates).eq('id', id)
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 500 })
+    }
+
+    // Try to sync via RPC. Surface error if the function isn't installed.
+    const { error: rpcErr } = await admin.rpc('sync_restaurant_hours')
+    if (rpcErr) {
+      return NextResponse.json({
+        success: true,
+        warning: 'Saved, but auto-sync function is missing. Run sql/rain_and_hours_fix.sql.',
+        rpcError: rpcErr.message,
+      })
+    }
     return NextResponse.json({ success: true })
+  }
+
+  if (action === 'sync_hours_now') {
+    // Manual trigger for syncing all restaurants' is_open based on their schedules.
+    // Useful when admin sets hours and wants to verify immediately, or when cron isn't running.
+    const { data: count, error: rpcErr } = await admin.rpc('sync_restaurant_hours')
+    if (rpcErr) {
+      return NextResponse.json({ error: rpcErr.message + ' — run sql/rain_and_hours_fix.sql' }, { status: 500 })
+    }
+    return NextResponse.json({ success: true, synced: count ?? 0 })
+  }
+
+  if (action === 'toggle_rain') {
+    const { active } = value as { active?: boolean }
+    const newValue = active ? 'true' : 'false'
+    const { error } = await admin
+      .from('app_config')
+      .upsert({ key: 'rain_active', value: newValue })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ success: true, rain_active: active })
   }
 
   if (action === 'update_pre_order') {

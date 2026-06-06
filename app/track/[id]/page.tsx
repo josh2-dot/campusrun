@@ -7,6 +7,9 @@ import { CUSTOMER_CANCEL_REASONS } from '@/lib/cancel-reasons'
 import { monogram } from '@/lib/utils'
 import type { Order } from '@/types'
 import { AlertTriangle, ChevronLeft, MessageCircle, Phone, Star } from 'lucide-react'
+import { RainBanner } from '@/components/ui/RainBanner'
+import { OrderChat } from '@/components/ui/OrderChat'
+import { CHAT_OPEN_STATUSES } from '@/lib/messaging'
 
 const CANCELLABLE_STATUSES = ['pending', 'confirmed', 'awaiting_runner', 'runner_assigned', 'preparing']
 const MILESTONES = ['Placed', 'Confirmed', 'On the way', 'Delivered'] as const
@@ -169,6 +172,8 @@ export default function TrackingPage() {
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => Date.now())
   const [showCancel, setShowCancel] = useState(false)
+  const [chatOpen,   setChatOpen]   = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [cancelling, setCancelling] = useState(false)
   const [showRating, setShowRating] = useState(false)
   const [alreadyRated, setAlreadyRated] = useState(false)
@@ -266,6 +271,7 @@ export default function TrackingPage() {
   const needsAttention = order.status === 'needs_attention'
   const awaitingRunner = order.status === 'awaiting_runner'
   const isPickedUp     = order.status === 'picked_up'
+
   const canCancel      = CANCELLABLE_STATUSES.includes(order.status)
   const runner         = order.runner as { full_name: string; phone: string } | null
   const restaurant     = order.restaurant as { name: string } | null
@@ -281,6 +287,21 @@ export default function TrackingPage() {
       {showCancel && (
         <CancelSheet onConfirm={cancelOrder} onClose={() => setShowCancel(false)} confirming={cancelling} />
       )}
+
+      {chatOpen && order && runner && (
+        <OrderChat
+          orderId={order.id}
+          myRole="customer"
+          otherName={runner.full_name}
+          orderRef={order.order_ref ?? undefined}
+          isOpen={CHAT_OPEN_STATUSES.includes(order.status as typeof CHAT_OPEN_STATUSES[number])}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
+
+      <div style={{ padding: '16px 16px 0' }}>
+        <RainBanner variant="customer" />
+      </div>
 
       {/* ETA HERO */}
       <div className="dot-texture" style={{ padding: '52px 18px 22px', background: isDelivered ? 'linear-gradient(180deg, #062a16, #0C0B09)' : needsAttention || isCancelled ? 'linear-gradient(180deg, #2A0A0A, #0C0B09)' : isScheduledPending ? 'linear-gradient(180deg, #1A1500, #0C0B09)' : 'linear-gradient(180deg, #1A1917, #0C0B09)' }}>
@@ -448,15 +469,17 @@ export default function TrackingPage() {
               <span className="font-mono" style={{ color: 'var(--ok, #1DB954)', fontWeight: 700, fontSize: 9, letterSpacing: '0.14em' }}>● LIVE</span>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              {/* ✅ FIXED: Message button now opens native SMS app */}
-              <a
-                href={`sms:${runner.phone}`}
+              <button
+                onClick={() => { setChatOpen(true); setUnreadCount(0) }}
                 className="press"
-                aria-label={`Send SMS to ${runner.full_name}`}
-                style={{ flex: 1, background: 'var(--bg-2, #26241F)', color: 'white', fontWeight: 800, fontSize: 13, padding: '10px', borderRadius: 12, border: '1px solid var(--line, #2A2825)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none' }}
+                aria-label="Open chat"
+                style={{ flex: 1, background: 'var(--bg-2, #26241F)', color: 'white', fontWeight: 800, fontSize: 13, padding: '10px', borderRadius: 12, border: '1px solid var(--line, #2A2825)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit', position: 'relative' }}
               >
                 <MessageCircle size={15} /> Message
-              </a>
+                {unreadCount > 0 && (
+                  <span style={{ position: 'absolute', top: -4, right: -4, background: '#FF3B30', color: 'white', fontSize: 10, fontWeight: 900, borderRadius: 999, minWidth: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{unreadCount}</span>
+                )}
+              </button>
               <a
                 href={`tel:${runner.phone}`}
                 className="press"

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { RainBanner } from '@/components/ui/RainBanner'
 import { monogram, fmtDuration } from '@/lib/utils'
 import type { Order, RunnerProfile } from '@/types'
 import { ArrowUp, Bike, Check, Home, Package, TrendingUp, User, X } from 'lucide-react'
@@ -432,6 +433,12 @@ export default function RunnerDashboard() {
           </div>
         </div>
       </div>
+
+      {view === 'orders' && (
+        <div style={{ padding: '0 14px' }}>
+          <RainBanner variant="runner" />
+        </div>
+      )}
 
       {/* Suspension banner / Online hero — hidden on earnings view */}
       {view === 'orders' && isSuspended && (

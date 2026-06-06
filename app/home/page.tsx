@@ -9,6 +9,8 @@ import { monogram } from '@/lib/utils'
 import { BottomNav } from '@/components/ui/BottomNav'
 import { InstallPrompt } from '@/components/ui/InstallPrompt'
 import { AppTutorial } from '@/components/ui/AppTutorial'
+import { HomeQuickActions } from '@/components/ui/HomeQuickActions'
+import { RainBanner } from '@/components/ui/RainBanner'
 import type { Restaurant, MenuItem, Order } from '@/types'
 import { Search, ShoppingBag, X } from 'lucide-react'
 import { useCartStore, getFavorites, toggleFavorite } from '@/store/cart'
@@ -220,21 +222,23 @@ function HomeContent() {
     const PEEK_DISTANCE = 56  // pixels — just enough to reveal the next card edge
     const PEEK_HOLD     = 700 // ms before scrolling back
 
+    let backTimer: ReturnType<typeof setTimeout> | null = null
     const peekTimer = setTimeout(() => {
       const targets = [pantryRef.current, featuredRef.current].filter(Boolean) as HTMLDivElement[]
       targets.forEach(el => {
-        // Only peek if there's actually content to peek at
         if (el.scrollWidth > el.clientWidth + 20) {
           el.scrollTo({ left: PEEK_DISTANCE, behavior: 'smooth' })
         }
       })
-      const backTimer = setTimeout(() => {
+      backTimer = setTimeout(() => {
         targets.forEach(el => el.scrollTo({ left: 0, behavior: 'smooth' }))
       }, PEEK_HOLD)
-      return () => clearTimeout(backTimer)
     }, 500)
 
-    return () => clearTimeout(peekTimer)
+    return () => {
+      clearTimeout(peekTimer)
+      if (backTimer) clearTimeout(backTimer)
+    }
   }, [loading, featuredItems.length, pantryPreview.length])
 
   useEffect(() => {
@@ -435,6 +439,11 @@ function HomeContent() {
               </div>
             )}
 
+            <RainBanner variant="customer" />
+
+            {/* Quick actions — install + notifications */}
+            <HomeQuickActions />
+
             {/* Pantry strip */}
             {pantry && pantryPreview.length > 0 && (
               <div style={{ marginBottom: 18 }}>
@@ -576,7 +585,8 @@ function HomeContent() {
           </button>
         </div>
       )}
-      <InstallPrompt />
+      {/* InstallPrompt auto-popup disabled — replaced by HomeQuickActions inline banner */}
+      {/* <InstallPrompt /> */}
       {showTutorial && <AppTutorial onClose={() => setShowTutorial(false)} />}
       <BottomNav active="home" />
     </div>

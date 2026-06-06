@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { RUNNER_CANCEL_REASONS } from '@/lib/cancel-reasons'
 import type { Order } from '@/types'
 import { OrderItemList } from '@/components/ui/OrderItemList'
+import { OrderChat } from '@/components/ui/OrderChat'
+import { CHAT_OPEN_STATUSES } from '@/lib/messaging'
 
 const S = {
 page: { maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: '#0C0B09', fontFamily: "'Nunito', system-ui, sans-serif", display: 'flex', flexDirection: 'column' as const },
@@ -95,11 +97,31 @@ export default function RunnerOrderPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
+  const [chatOpen,   setChatOpen]   = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [cancelling, setCancelling] = useState(false)
   const [code, setCode] = useState('')
   const [codeError, setCodeError] = useState(false)
   const [codeErrorMsg, setCodeErrorMsg] = useState('')
   const [confirming, setConfirming] = useState(false)
+
+  // Subscribe to messages for unread badge
+  useEffect(() => {
+    if (!order?.id) return
+    const channel = supabase
+      .channel(`order-msg-${order.id}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `order_id=eq.${order.id}` },
+        (payload) => {
+          const m = payload.new as { sender_role?: string }
+          if (m.sender_role === 'customer' && !chatOpen) {
+            setUnreadCount(c => c + 1)
+          }
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [order?.id, chatOpen])
 
   useEffect(() => {
   const fetchOrder = async () => {
@@ -176,6 +198,16 @@ export default function RunnerOrderPage() {
   return (
     <div style={S.page}>
       {showCancel && <CancelSheet onConfirm={cancelOrder} onClose={() => setShowCancel(false)} confirming={cancelling} />}
+      {chatOpen && order && customer && (
+        <OrderChat
+          orderId={order.id}
+          myRole="runner"
+          otherName={customer.full_name}
+          orderRef={order.order_ref ?? undefined}
+          isOpen={CHAT_OPEN_STATUSES.includes(order.status as typeof CHAT_OPEN_STATUSES[number])}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
       <div style={S.header}>
         <button onClick={() => router.push('/dashboard')} style={S.backBtn}>←</button>
         <h1 style={S.headerTitle}>Active Delivery</h1>
@@ -196,14 +228,17 @@ export default function RunnerOrderPage() {
           </div>
           {customer?.phone && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <a
-                href={`sms:${customer.phone}`}
+              <button
+                onClick={() => { setChatOpen(true); setUnreadCount(0) }}
                 className="press"
                 aria-label={`Message ${customer.full_name}`}
-                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 800, fontSize: 13, padding: '10px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none' }}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 800, fontSize: 13, padding: '10px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit', position: 'relative' }}
               >
-                💬 Message
-              </a>
+                Message
+                {unreadCount > 0 && (
+                  <span style={{ position: 'absolute', top: -4, right: -4, background: '#FF3B30', color: 'white', fontSize: 10, fontWeight: 900, borderRadius: 999, minWidth: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{unreadCount}</span>
+                )}
+              </button>
               <a
                 href={`tel:${customer.phone}`}
                 className="press"

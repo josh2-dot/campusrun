@@ -160,7 +160,7 @@ function HomeContent() {
 
       // User-specific data — only if signed in
       let profile: { full_name?: string; onboarding_done?: boolean } | null = null
-      let orders: Array<{ items?: unknown[]; restaurant?: { id: string; name: string; emoji?: string } | null }> | null = null
+      let orders: Order[] | null = null
       if (!anonymous && user) {
         const [{ data: prof }, { data: ords }] = await Promise.all([
           supabase.from('users').select('full_name, onboarding_done').eq('id', user.id).single(),
@@ -172,7 +172,7 @@ function HomeContent() {
             .limit(1),
         ])
         profile = prof
-        orders  = ords
+        orders  = (ords as Order[] | null)
 
         if (profile && !profile.onboarding_done) {
           router.replace('/onboarding')

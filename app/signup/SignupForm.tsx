@@ -31,7 +31,10 @@ export default function SignupForm() {
   // Redirect already-authenticated users
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace('/home')
+      if (data.session) {
+        const nextParam = searchParams.get('next')
+        router.replace(nextParam && nextParam.startsWith('/') ? nextParam : '/home')
+      }
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -113,6 +116,11 @@ export default function SignupForm() {
       setLoading(false); submitting.current = false; return
     }
 
+    // Preserve the original destination (e.g. /checkout) so onboarding can route back
+    const nextParam = searchParams.get('next')
+    if (nextParam && nextParam.startsWith('/')) {
+      try { localStorage.setItem('campusrun_post_auth_next', nextParam) } catch {}
+    }
     // Runner: redirect to apply-runner page which shows pending approval state
     router.push(role === 'runner' ? '/apply-runner' : '/onboarding')
   }

@@ -16,10 +16,20 @@ export function GoogleSignInButton({ mode = 'signin' }: { mode?: Mode }) {
     setLoading(true)
     setError('')
 
+    // Preserve where they were heading (e.g. /checkout) so callback routes them back after auth
+    let nextParam = '/complete-profile'
+    try {
+      const url = new URL(window.location.href)
+      const queryNext = url.searchParams.get('next')
+      if (queryNext && queryNext.startsWith('/')) {
+        localStorage.setItem('campusrun_post_auth_next', queryNext)
+      }
+    } catch {}
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/api/auth/callback?next=/complete-profile`,
+        redirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(nextParam)}`,
         queryParams: {
           access_type: 'offline',
           prompt:      'consent',

@@ -11,6 +11,8 @@ import { InstallPrompt } from '@/components/ui/InstallPrompt'
 import { AppTutorial } from '@/components/ui/AppTutorial'
 import { HomeQuickActions } from '@/components/ui/HomeQuickActions'
 import { RainBanner } from '@/components/ui/RainBanner'
+import { AnonymousSignupBanner } from '@/components/ui/AnonymousSignupBanner'
+import { SignupPromptSheet } from '@/components/ui/SignupPromptSheet'
 import type { Restaurant, MenuItem, Order } from '@/types'
 import { Search, ShoppingBag, X } from 'lucide-react'
 import { useCartStore, getFavorites, toggleFavorite } from '@/store/cart'
@@ -130,6 +132,7 @@ function HomeContent() {
       }
     }
     setReordering(false)
+    if (isAnonymous) { setShowSignupPrompt(true); return }
     router.push('/checkout')
   }
 
@@ -144,26 +147,38 @@ function HomeContent() {
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+      const anonymous = !user
+      setIsAnonymous(anonymous)
 
-      const [{ data: profile }, { data: rests }, { data: orders }, { data: items }] = await Promise.all([
-        supabase.from('users').select('full_name, onboarding_done').eq('id', user.id).single(),
+      // Public data — always fetched
+      const [{ data: rests }, { data: items }] = await Promise.all([
         supabase.from('restaurants').select('*').order('is_open', { ascending: false }).order('name'),
-        supabase.from('orders')
-          .select('*, restaurant:restaurants(name, emoji, id)')
-          .eq('customer_id', user.id)
-          .eq('status', 'delivered')
-          .order('delivered_at', { ascending: false })
-          .limit(1),
         supabase.from('menu_items').select('*').eq('is_available', true),
       ])
 
-      if (profile && !profile.onboarding_done) {
-        router.replace('/onboarding')
-        return
+      // User-specific data — only if signed in
+      let profile: { full_name?: string; onboarding_done?: boolean } | null = null
+      let orders: Array<{ items?: unknown[]; restaurant?: { id: string; name: string; emoji?: string } | null }> | null = null
+      if (!anonymous && user) {
+        const [{ data: prof }, { data: ords }] = await Promise.all([
+          supabase.from('users').select('full_name, onboarding_done').eq('id', user.id).single(),
+          supabase.from('orders')
+            .select('*, restaurant:restaurants(name, emoji, id)')
+            .eq('customer_id', user.id)
+            .eq('status', 'delivered')
+            .order('delivered_at', { ascending: false })
+            .limit(1),
+        ])
+        profile = prof
+        orders  = ords
+
+        if (profile && !profile.onboarding_done) {
+          router.replace('/onboarding')
+          return
+        }
       }
 
-      setFirstName(profile?.full_name?.split(' ')[0] ?? 'there')
+      setFirstName(profile?.full_name?.split(' ')[0] ?? '')
       setRestaurants((rests ?? []).filter(r => !r.is_pantry))
       setLastOrder(orders?.[0] ?? null)
 
@@ -196,7 +211,7 @@ function HomeContent() {
 
       setLoading(false)
       // Defer push prompt — only ask after they've placed at least one order
-      if ((orders ?? []).length > 0) initPush().catch(() => {})
+      if (!anonymous && (orders ?? []).length > 0) initPush().catch(() => {})
       try {
         const { data: capRow } = await supabase.from('app_config').select('value').eq('key', 'daily_order_cap').single()
         const cap = parseInt(capRow?.value ?? '0')
@@ -290,17 +305,31 @@ function HomeContent() {
                 {greeting}
               </p>
               <h1 className="font-display" style={{ color: 'white', fontSize: 28, margin: '4px 0 0', lineHeight: 1.05 }}>
-                Hey {firstName},<span style={{ color: 'var(--accent, #FF6B2B)' }}> hungry?</span>
+                {isAnonymous ? (
+                  <>What are you<span style={{ color: 'var(--accent, #FF6B2B)' }}> craving?</span></>
+                ) : (
+                  <>Hey {firstName},<span style={{ color: 'var(--accent, #FF6B2B)' }}> hungry?</span></>
+                )}
               </h1>
             </div>
-            <Link
-              href="/profile"
-              className="press"
-              aria-label="Go to profile"
-              style={{ width: 40, height: 40, borderRadius: 999, background: 'var(--bg-2, #26241F)', border: '1px solid var(--line, #2A2825)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
-            >
-              <span className="font-display" style={{ color: 'var(--accent, #FF6B2B)', fontSize: 14 }}>{initial}</span>
-            </Link>
+            {isAnonymous ? (
+              <Link
+                href="/login"
+                className="press"
+                style={{ background: 'var(--bg-2, #26241F)', border: '1px solid var(--line, #2A2825)', color: 'white', fontWeight: 800, fontSize: 12, padding: '8px 14px', borderRadius: 999, textDecoration: 'none' }}
+              >
+                Log in
+              </Link>
+            ) : (
+              <Link
+                href="/profile"
+                className="press"
+                aria-label="Go to profile"
+                style={{ width: 40, height: 40, borderRadius: 999, background: 'var(--bg-2, #26241F)', border: '1px solid var(--line, #2A2825)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+              >
+                <span className="font-display" style={{ color: 'var(--accent, #FF6B2B)', fontSize: 14 }}>{initial}</span>
+              </Link>
+            )}
           </div>
         )}
 
@@ -347,7 +376,7 @@ function HomeContent() {
           {([
             { id: 'all'       as const, label: 'All' },
             { id: 'fast'      as const, label: 'Fast (≤15 min)' },
-            { id: 'favorites' as const, label: '♥ Saved' },
+            ...(isAnonymous ? [] : [{ id: 'favorites' as const, label: '♥ Saved' }]),
           ]).map(c => (
             <button
               key={c.id}
@@ -439,6 +468,7 @@ function HomeContent() {
               </div>
             )}
 
+            {isAnonymous && <AnonymousSignupBanner />}
             <RainBanner variant="customer" />
 
             {/* Quick actions — install + notifications */}
@@ -571,7 +601,7 @@ function HomeContent() {
 
       {cartItems.length > 0 && (
         <div style={{ padding: '8px 16px', background: 'var(--bg-0, #0C0B09)', borderTop: '1px solid var(--line-soft, #1F1D1B)' }}>
-          <button onClick={() => router.push('/checkout')} className="press"
+          <button onClick={() => isAnonymous ? setShowSignupPrompt(true) : router.push('/checkout')} className="press"
             style={{ width: '100%', background: 'var(--accent, #FF6B2B)', color: 'white', border: 'none', borderRadius: 14, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
             <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, flexShrink: 0 }}>
               <ShoppingBag size={13} color="white" />
@@ -588,6 +618,14 @@ function HomeContent() {
       {/* InstallPrompt auto-popup disabled — replaced by HomeQuickActions inline banner */}
       {/* <InstallPrompt /> */}
       {showTutorial && <AppTutorial onClose={() => setShowTutorial(false)} />}
+      {showSignupPrompt && (
+        <SignupPromptSheet
+          intent="/checkout"
+          contextText={cartRestaurantName ? `Sign up to send your order from ${cartRestaurantName}. Takes 30 seconds, no card needed.` : undefined}
+          onClose={() => setShowSignupPrompt(false)}
+        />
+      )}
+
       <BottomNav active="home" />
     </div>
   )

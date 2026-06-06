@@ -29,7 +29,10 @@ function LoginForm() {
   // Redirect already-authenticated users
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace('/home')
+      if (data.session) {
+        const nextParam = searchParams.get('next')
+        router.replace(nextParam && nextParam.startsWith('/') ? nextParam : '/home')
+      }
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -48,8 +51,15 @@ function LoginForm() {
     }
     if (data.user) {
       const { data: profile } = await supabase.from('users').select('role').eq('id', data.user.id).single()
-      const map: Record<string, string> = { customer: '/home', runner: '/dashboard', admin: '/admin/dashboard' }
-      router.push(map[profile?.role ?? 'customer'])
+      const role = profile?.role ?? 'customer'
+      // Honor ?next= for customers returning to checkout/cart; runners + admins always go to their dashboards
+      const nextParam = searchParams.get('next')
+      if (role === 'customer' && nextParam && nextParam.startsWith('/')) {
+        router.push(nextParam)
+      } else {
+        const map: Record<string, string> = { customer: '/home', runner: '/dashboard', admin: '/admin/dashboard' }
+        router.push(map[role])
+      }
     }
   }
 

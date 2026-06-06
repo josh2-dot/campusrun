@@ -56,6 +56,10 @@ export default function CheckoutPage() {
   const grandTotal     = orderTotal
 
   useEffect(() => {
+    // Anonymous users get sent to signup with intent preserved
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { router.replace('/signup?next=/checkout'); return }
+    })
     if (items.length === 0) { router.push('/home'); return }
     // restaurantId may be null for pantry-only orders — we'll look it up below
 
@@ -101,7 +105,7 @@ export default function CheckoutPage() {
     setLoading(true); setError('')
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/login'); return }
+    if (!user) { router.push('/login?next=/checkout'); return }
 
     // For pantry-only orders, use the pantry restaurant's ID for the insert
     let effectiveRestaurantId = restaurantId

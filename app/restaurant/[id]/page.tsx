@@ -7,6 +7,7 @@ import { useCartStore } from '@/store/cart'
 import { monogram } from '@/lib/utils'
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet'
 import type { Restaurant, MenuItem } from '@/types'
+import { SignupPromptSheet } from '@/components/ui/SignupPromptSheet'
 import { ChevronLeft, Heart } from 'lucide-react'
 
 export default function RestaurantPage() {
@@ -22,6 +23,8 @@ export default function RestaurantPage() {
   const [showPantry, setShowPantry] = useState(false)
   const [activeCategory, setActiveCategory] = useState('All')
   const [loading, setLoading] = useState(true)
+  const [isAnonymous, setIsAnonymous] = useState(false)
+  const [showSignupPrompt, setShowSignupPrompt] = useState(false)
   const [confirmSwitch, setConfirmSwitch] = useState<MenuItem | null>(null)
   const [notifySubscribed, setNotifySubscribed] = useState(false)
   const [notifyLoading,    setNotifyLoading]    = useState(false)
@@ -54,6 +57,9 @@ export default function RestaurantPage() {
 
   useEffect(() => {
     async function load() {
+      const { data: { user: u } } = await supabase.auth.getUser()
+      setIsAnonymous(!u)
+
       const [{ data: rest }, { data: its }] = await Promise.all([
         supabase.from('restaurants').select('*').eq('id', id).single(),
         supabase.from('menu_items').select('*').eq('restaurant_id', id).eq('is_available', true).order('category'),
@@ -381,7 +387,7 @@ function handleAdd(item: MenuItem) {
       {totalItems() > 0 && (
         <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, padding: '12px 16px 28px', background: 'linear-gradient(to top, var(--bg-0, #0C0B09) 65%, transparent)', zIndex: 40, pointerEvents: 'none' }}>
           <button
-            onClick={() => router.push('/checkout')}
+            onClick={() => isAnonymous ? setShowSignupPrompt(true) : router.push('/checkout')}
             className="press"
             style={{ width: '100%', background: 'var(--accent, #FF6B2B)', color: 'white', border: 'none', borderRadius: 16, padding: '14px 16px', display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'center', cursor: 'pointer', fontFamily: 'inherit', pointerEvents: 'auto', boxShadow: '0 4px 24px rgba(255,107,43,0.35)' }}
           >
@@ -714,6 +720,14 @@ function PortionPickerSheet({ item, extras = [], onConfirm, onClose }: {
           <button onClick={onClose} style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: 'var(--ink-3, #6B6660)', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '8px 0' }}>Cancel</button>
         </div>
       </div>
+    
+      {showSignupPrompt && (
+        <SignupPromptSheet
+          intent="/checkout"
+          contextText={restaurant ? `Sign up to send your order from ${restaurant.name}. Takes 30 seconds, no card needed.` : undefined}
+          onClose={() => setShowSignupPrompt(false)}
+        />
+      )}
     </div>
   )
 }

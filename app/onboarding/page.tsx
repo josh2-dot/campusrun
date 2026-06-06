@@ -84,7 +84,15 @@ export default function OnboardingPage() {
     }
     // Flag for home page to auto-trigger the tutorial walkthrough
     try { localStorage.setItem('campusrun_show_tutorial', '1') } catch {}
-    router.replace('/home')
+    let dest = '/home'
+    try {
+      const stashed = localStorage.getItem('campusrun_post_auth_next')
+      if (stashed && stashed.startsWith('/')) {
+        dest = stashed
+        localStorage.removeItem('campusrun_post_auth_next')
+      }
+    } catch {}
+    router.replace(dest)
   }
 
   function go(next: number) {

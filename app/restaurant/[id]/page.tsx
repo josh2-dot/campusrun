@@ -452,6 +452,14 @@ function handleAdd(item: MenuItem) {
           onCancel={() => setConfirmSwitch(null)}
         />
       )}
+
+      {showSignupPrompt && (
+        <SignupPromptSheet
+          intent="/checkout"
+          contextText={restaurant ? `Sign up to send your order from ${restaurant.name}. Takes 30 seconds, no card needed.` : undefined}
+          onClose={() => setShowSignupPrompt(false)}
+        />
+      )}
     </div>
   )
 }
@@ -720,14 +728,6 @@ function PortionPickerSheet({ item, extras = [], onConfirm, onClose }: {
           <button onClick={onClose} style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: 'var(--ink-3, #6B6660)', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '8px 0' }}>Cancel</button>
         </div>
       </div>
-    
-      {showSignupPrompt && (
-        <SignupPromptSheet
-          intent="/checkout"
-          contextText={restaurant ? `Sign up to send your order from ${restaurant.name}. Takes 30 seconds, no card needed.` : undefined}
-          onClose={() => setShowSignupPrompt(false)}
-        />
-      )}
     </div>
   )
 }

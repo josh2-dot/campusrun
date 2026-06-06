@@ -80,6 +80,8 @@ function HomeContent() {
   }, [])
   const supabase = createClient()
   const [firstName, setFirstName] = useState('there')
+  const [isAnonymous, setIsAnonymous] = useState(false)
+  const [showSignupPrompt, setShowSignupPrompt] = useState(false)
   const [restaurants, setRestaurants] = useState<Restaurant[]>([])
   const [allItems, setAllItems] = useState<SearchResult[]>([])
   const [lastOrder, setLastOrder] = useState<Order | null>(null)

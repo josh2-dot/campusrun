@@ -336,6 +336,7 @@ export default function AdminDashboard() {
     { href: '/admin/pre-orders',   icon: '\u26A1',       label: 'Pre-orders',          sub: 'Bulk pickups by peak window',     urgent: false },
     { href: '/admin/payouts',      icon: '\uD83D\uDCB0', label: 'Runner Payouts',      sub: 'Track and mark earnings as paid',  urgent: false },
     { href: '/admin/payments',     icon: '\uD83C\uDFE6', label: 'Restaurant Pay',      sub: 'Float queue \u2014 pay restaurants', urgent: false },
+    { href: '/admin/manual-order', icon: '\uD83D\uDCAC', label: 'Manual Order',        sub: 'Build order from WhatsApp message', urgent: false },
     { href: '/admin/analytics',    icon: '\uD83D\uDCCA', label: 'Analytics',           sub: 'Revenue, orders, leaderboard',     urgent: false },
   ]
 

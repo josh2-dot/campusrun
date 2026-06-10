@@ -7,7 +7,7 @@ import { useCartStore } from '@/store/cart'
 import { monogram } from '@/lib/utils'
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet'
 import type { Restaurant, MenuItem } from '@/types'
-import { SignupPromptSheet } from '@/components/ui/SignupPromptSheet'
+import { ExpressOrderSheet } from '@/components/ui/ExpressOrderSheet'
 import { ChevronLeft, Heart } from 'lucide-react'
 
 export default function RestaurantPage() {
@@ -454,7 +454,7 @@ function handleAdd(item: MenuItem) {
       )}
 
       {showSignupPrompt && (
-        <SignupPromptSheet
+        <ExpressOrderSheet
           intent="/checkout"
           contextText={restaurant ? `Sign up to send your order from ${restaurant.name}. Takes 30 seconds, no card needed.` : undefined}
           onClose={() => setShowSignupPrompt(false)}

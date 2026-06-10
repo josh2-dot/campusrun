@@ -12,7 +12,9 @@ import { AppTutorial } from '@/components/ui/AppTutorial'
 import { HomeQuickActions } from '@/components/ui/HomeQuickActions'
 import { RainBanner } from '@/components/ui/RainBanner'
 import { AnonymousSignupBanner } from '@/components/ui/AnonymousSignupBanner'
-import { SignupPromptSheet } from '@/components/ui/SignupPromptSheet'
+import { QuickOrderBar } from '@/components/ui/QuickOrderBar'
+import { WhatsAppOrderButton } from '@/components/ui/WhatsAppOrderButton'
+import { ExpressOrderSheet } from '@/components/ui/ExpressOrderSheet'
 import type { Restaurant, MenuItem, Order } from '@/types'
 import { Search, ShoppingBag, X } from 'lucide-react'
 import { useCartStore, getFavorites, toggleFavorite } from '@/store/cart'
@@ -470,6 +472,8 @@ function HomeContent() {
               </div>
             )}
 
+            <QuickOrderBar />
+            <WhatsAppOrderButton />
             {isAnonymous && <AnonymousSignupBanner />}
             <RainBanner variant="customer" />
 
@@ -621,7 +625,7 @@ function HomeContent() {
       {/* <InstallPrompt /> */}
       {showTutorial && <AppTutorial onClose={() => setShowTutorial(false)} />}
       {showSignupPrompt && (
-        <SignupPromptSheet
+        <ExpressOrderSheet
           intent="/checkout"
           contextText={cartRestaurantName ? `Sign up to send your order from ${cartRestaurantName}. Takes 30 seconds, no card needed.` : undefined}
           onClose={() => setShowSignupPrompt(false)}

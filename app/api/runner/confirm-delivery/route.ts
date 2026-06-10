@@ -41,6 +41,27 @@ export async function POST(request: NextRequest) {
     tag: 'delivered',
   })
 
+  // Express-checkout users get a follow-up acknowledging we saved their account
+  const { data: customer } = await admin
+    .from('users')
+    .select('signup_source, express_acknowledged')
+    .eq('id', order.customer_id)
+    .single()
+
+  if (customer?.signup_source === 'express' && !customer.express_acknowledged) {
+    // Small delay so it lands after the delivered notification
+    setTimeout(() => {
+      sendPushToUser(order.customer_id, {
+        title: '👋 Welcome to CampusRun',
+        body: "We saved your details — next time, just type your order and you're done.",
+        url: '/orders',
+        tag: 'express-welcome',
+      }).catch(() => {})
+    }, 3000)
+
+    await admin.from('users').update({ express_acknowledged: true }).eq('id', order.customer_id)
+  }
+
   // Push to runner: earnings confirmed
   await sendPushToUser(user.id, {
     title: '✅ Delivery complete!',

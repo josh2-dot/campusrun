@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const admin = createAdminClient()
-  const { data: order } = await admin.from('orders').select('id, status, runner_id, customer_id, delivery_code, order_ref, food_total').eq('id', orderId).single()
+  const { data: order } = await admin.from('orders').select('id, status, runner_id, customer_id, delivery_code, order_ref, food_total, delivery_fee, admin_delivered').eq('id', orderId).single()
 
   if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   if (order.runner_id !== user.id) return NextResponse.json({ error: 'Not your order' }, { status: 403 })

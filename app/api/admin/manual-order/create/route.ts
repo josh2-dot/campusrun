@@ -29,7 +29,18 @@ export async function POST(req: NextRequest) {
     customer_name?: string
     customer_email?: string
     restaurant_id: string
-    items: Array<{ menu_item_id: string; name: string; price: number; quantity: number }>
+    items: Array<{
+      menu_item_id: string
+      name:         string
+      price:        number
+      quantity:     number
+      options?: {
+        is_pantry?: boolean
+        swallow?:   'garri' | 'fufu'
+        portions?:  Array<{ price: number; quantity: number }>
+        addons?:    Array<{ menu_item_id: string; name: string; price: number; quantity: number; portions?: Array<{ price: number; quantity: number }> }>
+      }
+    }>
     delivery_address: string
     delivery_fee?: number
     want_plate?: boolean
@@ -99,8 +110,19 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Compute totals
-  const foodTotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0)
+  // Compute totals — handles options (portions + addons) the same way cart.ts does
+  function lineTotal(i: typeof items[0]): number {
+    if (i.options?.portions && i.options.portions.length > 0) {
+      const portionsTotal = i.options.portions.reduce((s, p) => s + p.price * p.quantity, 0)
+      const addonsTotal = (i.options.addons ?? []).reduce((s, a) => {
+        if (a.portions && a.portions.length > 0) return s + a.portions.reduce((ps, p) => ps + p.price * p.quantity, 0)
+        return s + a.price * a.quantity
+      }, 0)
+      return (portionsTotal + addonsTotal) * i.quantity
+    }
+    return i.price * i.quantity
+  }
+  const foodTotal = items.reduce((sum, i) => sum + lineTotal(i), 0)
   const totalItemsForPlate = items.reduce((sum, i) => sum + i.quantity, 0)
   const plateFee = want_plate ? totalItemsForPlate * plate_fee_per_item : 0
   const orderTotal = foodTotal + plateFee + delivery_fee
@@ -115,7 +137,7 @@ export async function POST(req: NextRequest) {
     .insert({
       customer_id:        customerId,
       restaurant_id:      restaurant_id,
-      items:              items.map(i => ({ menu_item_id: i.menu_item_id, name: i.name, price: i.price, quantity: i.quantity })),
+      items:              items.map(i => ({ menu_item_id: i.menu_item_id, name: i.name, price: i.price, quantity: i.quantity, options: i.options })),
       food_total:         foodTotal + plateFee,
       delivery_fee:       delivery_fee,
       total:              orderTotal,

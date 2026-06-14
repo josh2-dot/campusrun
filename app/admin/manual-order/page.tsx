@@ -3,21 +3,29 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, Copy, MessageCircle } from 'lucide-react'
+import { ChevronLeft, Copy, MessageCircle, Sliders } from 'lucide-react'
+import { PortionPickerSheet, type PortionAddon } from '@/components/ui/PortionPickerSheet'
+import type { MenuItem as FullMenuItem } from '@/types'
 import { createClient } from '@/lib/supabase/client'
 
 type ParsedItem = {
   menu_item_id:       string
   name:               string
-  price:              number
+  price:              number      // line total when no options; base price otherwise
   quantity:           number
   restaurant_id:      string
   restaurant_name:    string
   restaurant_is_open: boolean
+  options?: {
+    is_pantry?: boolean
+    swallow?:   'garri' | 'fufu'
+    portions?:  Array<{ price: number; quantity: number }>
+    addons?:    PortionAddon[]
+  }
 }
 
 type Restaurant = { id: string; name: string; is_open: boolean }
-type MenuItem   = { id: string; name: string; price: number; restaurant_id: string }
+type MenuItem   = FullMenuItem
 
 export default function ManualOrderPage() {
   const router   = useRouter()
@@ -32,6 +40,7 @@ export default function ManualOrderPage() {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [restaurantId,    setRestaurantId]    = useState('')
   const [items,           setItems]           = useState<ParsedItem[]>([])
+  const [pickerForIdx,    setPickerForIdx]    = useState<number | null>(null)
   const [wantPlate,       setWantPlate]       = useState(false)
   const [deliveryFee,     setDeliveryFee]     = useState(500)
   const [notes,           setNotes]           = useState('')
@@ -62,7 +71,7 @@ export default function ManualOrderPage() {
       // Load restaurants + menu
       const [{ data: rests }, { data: mItems }] = await Promise.all([
         supabase.from('restaurants').select('id, name, is_open').eq('is_pantry', false).order('name'),
-        supabase.from('menu_items').select('id, name, price, restaurant_id').eq('is_available', true),
+        supabase.from('menu_items').select('id, name, price, restaurant_id, category, description, is_available, has_portions, portion_min_price, portion_first_step, portion_step, portion_max_price').eq('is_available', true),
       ])
       setRestaurants(rests ?? [])
       setMenuItems(mItems ?? [])
@@ -70,6 +79,46 @@ export default function ManualOrderPage() {
     init()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+
+
+  // Compute the total price of a single ParsedItem (used in totals + UI)
+  function itemTotal(item: ParsedItem): number {
+    if (item.options?.portions && item.options.portions.length > 0) {
+      const portionsTotal = item.options.portions.reduce((s, p) => s + p.price * p.quantity, 0)
+      const addonsTotal = (item.options.addons ?? []).reduce((s, a) => {
+        if (a.portions && a.portions.length > 0) return s + a.portions.reduce((ps, p) => ps + p.price * p.quantity, 0)
+        return s + a.price * a.quantity
+      }, 0)
+      return (portionsTotal + addonsTotal) * item.quantity
+    }
+    return item.price * item.quantity
+  }
+
+  function describeOptions(item: ParsedItem): string | null {
+    if (!item.options) return null
+    const parts: string[] = []
+    if (item.options.portions?.length) {
+      const sizes = item.options.portions.map(p => `₦${p.price.toLocaleString()}`).join(', ')
+      parts.push(`Size: ${sizes}`)
+    }
+    if (item.options.swallow) parts.push(item.options.swallow === 'garri' ? 'Garri (Eba)' : 'Fufu')
+    const addonCount = item.options.addons?.reduce((s, a) => {
+      if (a.portions) return s + a.portions.reduce((q, p) => q + p.quantity, 0)
+      return s + a.quantity
+    }, 0) ?? 0
+    if (addonCount > 0) parts.push(`+${addonCount} extra${addonCount !== 1 ? 's' : ''}`)
+    return parts.length ? parts.join(' · ') : null
+  }
+
+  function handlePortionConfirm(
+    idx: number,
+    portions: Array<{ price: number; quantity: number }>,
+    addons:   PortionAddon[],
+    swallow?: 'garri' | 'fufu',
+  ) {
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, options: { ...(it.options ?? {}), portions, addons, swallow } } : it))
+    setPickerForIdx(null)
+  }
 
   function addItem() {
     const validRestaurantItems = menuItems.filter(m => m.restaurant_id === restaurantId)
@@ -94,10 +143,10 @@ export default function ManualOrderPage() {
   function changeItemMenu(idx: number, menuItemId: string) {
     const m = menuItems.find(x => x.id === menuItemId)
     if (!m) return
-    updateItem(idx, { menu_item_id: m.id, name: m.name, price: m.price })
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, menu_item_id: m.id, name: m.name, price: m.price, options: undefined } : it))
   }
 
-  const foodTotal       = items.reduce((s, i) => s + i.price * i.quantity, 0)
+  const foodTotal       = items.reduce((s, i) => s + itemTotal(i), 0)
   const totalItemCount  = items.reduce((s, i) => s + i.quantity, 0)
   const plateFee        = wantPlate ? totalItemCount * 200 : 0
   const orderTotal      = foodTotal + plateFee + deliveryFee
@@ -117,7 +166,7 @@ export default function ManualOrderPage() {
           customer_phone:    customerPhone,
           customer_name:     customerName,
           restaurant_id:     restaurantId,
-          items:             items.map(i => ({ menu_item_id: i.menu_item_id, name: i.name, price: i.price, quantity: i.quantity })),
+          items:             items.map(i => ({ menu_item_id: i.menu_item_id, name: i.name, price: i.price, quantity: i.quantity, options: i.options })),
           delivery_address:  deliveryAddress,
           delivery_fee:      deliveryFee,
           want_plate:        wantPlate,
@@ -273,31 +322,60 @@ export default function ManualOrderPage() {
 
             {restaurantId && (
               <>
-                {items.map((item, idx) => (
-                  <div key={idx} style={{ background: '#1A1917', border: '1px solid #2A2825', borderRadius: 12, padding: 10, marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <select
-                      value={item.menu_item_id}
-                      onChange={e => changeItemMenu(idx, e.target.value)}
-                      style={{ flex: 1, background: '#0C0B09', border: '1px solid #2A2825', borderRadius: 8, padding: '8px 10px', color: 'white', fontSize: 12, fontWeight: 600, outline: 'none', fontFamily: 'inherit', minWidth: 0 }}
-                    >
-                      {validRestaurantItems.map(m => (
-                        <option key={m.id} value={m.id}>{m.name} (₦{m.price})</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={item.quantity}
-                      onChange={e => updateItem(idx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                      style={{ width: 50, background: '#0C0B09', border: '1px solid #2A2825', borderRadius: 8, padding: '8px', color: 'white', fontSize: 12, fontWeight: 700, outline: 'none', fontFamily: 'inherit', textAlign: 'center' }}
-                    />
-                    <button onClick={() => removeItem(idx)} aria-label="Remove"
-                      style={{ background: 'transparent', color: '#FF3B30', border: 'none', cursor: 'pointer', padding: 4, fontSize: 18 }}>
-                      ×
-                    </button>
-                  </div>
-                ))}
+                {items.map((item, idx) => {
+                  const menuItem = menuItems.find(m => m.id === item.menu_item_id)
+                  const hasPortions = !!menuItem?.has_portions
+                  const optionDesc  = describeOptions(item)
+                  const lineTotal   = itemTotal(item)
+                  return (
+                    <div key={idx} style={{ background: '#1A1917', border: '1px solid #2A2825', borderRadius: 12, padding: 10, marginBottom: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select
+                          value={item.menu_item_id}
+                          onChange={e => changeItemMenu(idx, e.target.value)}
+                          style={{ flex: 1, background: '#0C0B09', border: '1px solid #2A2825', borderRadius: 8, padding: '8px 10px', color: 'white', fontSize: 12, fontWeight: 600, outline: 'none', fontFamily: 'inherit', minWidth: 0 }}
+                        >
+                          {validRestaurantItems.map(m => (
+                            <option key={m.id} value={m.id}>{m.name} {m.has_portions ? '· portions' : `(₦${m.price})`}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={item.quantity}
+                          onChange={e => updateItem(idx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                          style={{ width: 50, background: '#0C0B09', border: '1px solid #2A2825', borderRadius: 8, padding: '8px', color: 'white', fontSize: 12, fontWeight: 700, outline: 'none', fontFamily: 'inherit', textAlign: 'center' }}
+                        />
+                        <button onClick={() => removeItem(idx)} aria-label="Remove"
+                          style={{ background: 'transparent', color: '#FF3B30', border: 'none', cursor: 'pointer', padding: 4, fontSize: 18 }}>
+                          ×
+                        </button>
+                      </div>
+
+                      {/* Build plate button for items that have portions */}
+                      {hasPortions && (
+                        <button onClick={() => setPickerForIdx(idx)}
+                          style={{ width: '100%', marginTop: 8, background: item.options?.portions ? 'rgba(255,107,43,0.12)' : '#0C0B09', color: item.options?.portions ? '#FF6B2B' : '#A09A8E', border: `1px solid ${item.options?.portions ? '#FF6B2B' : '#2A2825'}`, borderRadius: 8, padding: '8px 12px', fontWeight: 800, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          <Sliders size={12} />
+                          {item.options?.portions ? 'Edit plate' : 'Build plate (portion + extras)'}
+                        </button>
+                      )}
+
+                      {/* Option summary + computed total */}
+                      {(optionDesc || hasPortions) && (
+                        <div style={{ marginTop: 8, padding: '6px 8px', background: '#0C0B09', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, color: '#A09A8E', fontWeight: 600, flex: 1 }}>
+                            {optionDesc ?? (hasPortions ? 'No portion set yet' : null)}
+                          </span>
+                          <span style={{ fontSize: 12, color: '#FF6B2B', fontWeight: 800, flexShrink: 0 }}>
+                            ₦{lineTotal.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
                 <button onClick={addItem}
                   style={{ width: '100%', background: 'transparent', color: '#FF6B2B', border: '1px dashed #FF6B2B', borderRadius: 10, padding: '10px', fontWeight: 800, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
                   + Add item
@@ -338,6 +416,23 @@ export default function ManualOrderPage() {
           </button>
         </div>
       )}
+
+      {/* Portion picker modal */}
+      {pickerForIdx !== null && items[pickerForIdx] && (() => {
+        const idx = pickerForIdx
+        const targetItem = menuItems.find(m => m.id === items[idx].menu_item_id)
+        if (!targetItem) { setPickerForIdx(null); return null }
+        // Extras = all other available items in this restaurant
+        const extras = menuItems.filter(m => m.restaurant_id === restaurantId && m.id !== targetItem.id)
+        return (
+          <PortionPickerSheet
+            item={targetItem}
+            extras={extras}
+            onConfirm={(portions, addons, swallow) => handlePortionConfirm(idx, portions, addons, swallow)}
+            onClose={() => setPickerForIdx(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

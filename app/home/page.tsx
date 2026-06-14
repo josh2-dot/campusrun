@@ -83,6 +83,7 @@ function HomeContent() {
   const supabase = createClient()
   const [firstName, setFirstName] = useState('there')
   const [isAnonymous, setIsAnonymous] = useState(false)
+  const [isAdmin,     setIsAdmin]     = useState(false)
   const [showSignupPrompt, setShowSignupPrompt] = useState(false)
   const [restaurants, setRestaurants] = useState<Restaurant[]>([])
   const [allItems, setAllItems] = useState<SearchResult[]>([])
@@ -161,11 +162,11 @@ function HomeContent() {
       ])
 
       // User-specific data — only if signed in
-      let profile: { full_name?: string; onboarding_done?: boolean } | null = null
+      let profile: { full_name?: string; onboarding_done?: boolean; role?: string } | null = null
       let orders: Order[] | null = null
       if (!anonymous && user) {
         const [{ data: prof }, { data: ords }] = await Promise.all([
-          supabase.from('users').select('full_name, onboarding_done').eq('id', user.id).single(),
+          supabase.from('users').select('full_name, onboarding_done, role').eq('id', user.id).single(),
           supabase.from('orders')
             .select('*, restaurant:restaurants(name, emoji, id)')
             .eq('customer_id', user.id)
@@ -183,6 +184,7 @@ function HomeContent() {
       }
 
       setFirstName(profile?.full_name?.split(' ')[0] ?? '')
+      setIsAdmin(profile?.role === 'admin')
       setRestaurants((rests ?? []).filter(r => !r.is_pantry))
       setLastOrder(orders?.[0] ?? null)
 
@@ -630,6 +632,14 @@ function HomeContent() {
           contextText={cartRestaurantName ? `Sign up to send your order from ${cartRestaurantName}. Takes 30 seconds, no card needed.` : undefined}
           onClose={() => setShowSignupPrompt(false)}
         />
+      )}
+
+      {/* Admin mode indicator */}
+      {isAdmin && (
+        <Link href="/admin/dashboard" className="press"
+          style={{ position: 'fixed', bottom: 70, left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,107,43,0.95)', color: 'white', borderRadius: 999, padding: '8px 16px', fontWeight: 800, fontSize: 12, textDecoration: 'none', boxShadow: '0 4px 14px rgba(255,107,43,0.4)', zIndex: 100, fontFamily: "'Nunito', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>👁️ Admin mode — back to dashboard</span>
+        </Link>
       )}
 
       <BottomNav active="home" />

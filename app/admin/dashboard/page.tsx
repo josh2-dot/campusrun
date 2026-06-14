@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { OrderItemList } from '@/components/ui/OrderItemList'
 import { createClient } from '@/lib/supabase/client'
+import { AdminDeliveriesWidget } from '@/components/ui/AdminDeliveriesWidget'
 import { initPush } from '@/lib/push'
 import type { Order } from '@/types'
 
@@ -39,6 +40,7 @@ export default function AdminDashboard() {
   const router   = useRouter()
   const supabase = createClient()
   const [orders,           setOrders]           = useState<Order[]>([])
+  const [adminUserId,      setAdminUserId]      = useState<string | null>(null)
   const [todayRevenue,     setTodayRevenue]     = useState(0)
   const [onlineRunners,    setOnlineRunners]    = useState(0)
   const [pendingApps,      setPendingApps]      = useState(0)
@@ -155,6 +157,7 @@ export default function AdminDashboard() {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
+      setAdminUserId(user.id)
       const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
       if (profile?.role !== 'admin') { router.push('/home'); return }
       await load()
@@ -337,6 +340,7 @@ export default function AdminDashboard() {
     { href: '/admin/payouts',      icon: '\uD83D\uDCB0', label: 'Runner Payouts',      sub: 'Track and mark earnings as paid',  urgent: false },
     { href: '/admin/payments',     icon: '\uD83C\uDFE6', label: 'Restaurant Pay',      sub: 'Float queue \u2014 pay restaurants', urgent: false },
     { href: '/admin/manual-order', icon: '\uD83D\uDCAC', label: 'Manual Order',        sub: 'Build order from WhatsApp message', urgent: false },
+    { href: '/home?admin=1',       icon: '\uD83D\uDC41\uFE0F', label: 'View as Customer',    sub: 'See the customer side of the app',  urgent: false },
     { href: '/admin/analytics',    icon: '\uD83D\uDCCA', label: 'Analytics',           sub: 'Revenue, orders, leaderboard',     urgent: false },
   ]
 
@@ -493,6 +497,9 @@ export default function AdminDashboard() {
           </p>
         </div>
       )}
+
+      {/* Admin self-delivery widget */}
+      {adminUserId && <AdminDeliveriesWidget adminId={adminUserId} />}
 
       {/* Growth signals */}
       {analytics && (

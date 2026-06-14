@@ -19,13 +19,26 @@ export async function POST(request: NextRequest) {
   if (order.status !== 'picked_up') return NextResponse.json({ error: 'Order must be picked up before confirming delivery' }, { status: 409 })
   if (code.trim() !== order.delivery_code) return NextResponse.json({ success: false, error: 'Wrong code. Ask the customer to check their tracking page.' }, { status: 422 })
 
-  const { data: updated, error } = await admin.from('orders').update({ status: 'delivered', delivered_at: new Date().toISOString() }).eq('id', orderId).select().single()
+  // Detect admin self-delivery: platform earns full delivery_fee instead of paying out to runner
+  const isAdminDelivery = !!order.admin_delivered
+  const RUNNER_FLAT_EARNINGS = 300
+  const DELIVERY_FEE         = order.delivery_fee ?? 500
+
+  const deliveryUpdate: Record<string, unknown> = {
+    status: 'delivered',
+    delivered_at: new Date().toISOString(),
+  }
+  if (isAdminDelivery) {
+    // Flip platform_cut to full delivery fee; zero out runner_earnings so payouts skip it
+    deliveryUpdate.platform_cut    = DELIVERY_FEE
+    deliveryUpdate.runner_earnings = 0
+  }
+
+  const { data: updated, error } = await admin.from('orders').update(deliveryUpdate).eq('id', orderId).select().single()
   if (error || !updated) return NextResponse.json({ error: 'Failed to confirm delivery' }, { status: 500 })
 
-  // ── Debit float: food cost + runner cut went out today ──────────
-  // Logged in float_ledger for audit. Future Paystack settlement will credit it back.
-  const RUNNER_FLAT_EARNINGS = 300
-  const cashOut = (order.food_total ?? 0) + RUNNER_FLAT_EARNINGS
+  // ── Debit float: food cost + (runner cut, unless admin delivered) ──────────
+  const cashOut = (order.food_total ?? 0) + (isAdminDelivery ? 0 : RUNNER_FLAT_EARNINGS)
   await admin.rpc('debit_float', {
     p_amount:   cashOut,
     p_order_id: orderId,
@@ -62,13 +75,15 @@ export async function POST(request: NextRequest) {
     await admin.from('users').update({ express_acknowledged: true }).eq('id', order.customer_id)
   }
 
-  // Push to runner: earnings confirmed
-  await sendPushToUser(user.id, {
-    title: '✅ Delivery complete!',
-    body: `₦300 added to your earnings for order ${order.order_ref}`,
-    url: '/dashboard',
-    tag: 'earnings',
-  })
+  // Push to runner: earnings confirmed (skip for admin self-delivery)
+  if (!isAdminDelivery) {
+    await sendPushToUser(user.id, {
+      title: '✅ Delivery complete!',
+      body: `₦300 added to your earnings for order ${order.order_ref}`,
+      url: '/dashboard',
+      tag: 'earnings',
+    })
+  }
 
   return NextResponse.json({ success: true, order: updated })
 }

@@ -18,7 +18,7 @@ export async function GET() {
 
   const [{ data: profiles }, { data: delivered }, { data: payouts }, { data: requests }] = await Promise.all([
     admin.from('runner_profiles').select('user_id, total_earnings, users(full_name, phone)'),
-    admin.from('orders').select('id, runner_id, runner_earnings, delivered_at, order_ref').eq('status', 'delivered').not('runner_id', 'is', null),
+    admin.from('orders').select('id, runner_id, runner_earnings, delivered_at, order_ref').eq('status', 'delivered').not('runner_id', 'is', null).eq('admin_delivered', false),
     admin.from('payouts').select('*, marked_by:users!marked_paid_by(full_name)').order('created_at', { ascending: false }),
     admin.from('payout_requests').select('*, runner:users!runner_id(full_name, phone)').order('created_at', { ascending: false }),
   ])

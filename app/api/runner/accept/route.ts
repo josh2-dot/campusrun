@@ -11,13 +11,21 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('users').select('role, full_name').eq('id', user.id).single()
-  if (profile?.role !== 'runner') return NextResponse.json({ error: 'Only runners can accept orders' }, { status: 403 })
+  if (profile?.role !== 'runner' && profile?.role !== 'admin') {
+    return NextResponse.json({ error: 'Only runners or admins can accept orders' }, { status: 403 })
+  }
+  const isAdminDelivery = profile.role === 'admin'
 
   const admin = createAdminClient()
 
   const { data, error } = await admin
     .from('orders')
-    .update({ runner_id: user.id, status: 'runner_assigned', runner_assigned_at: new Date().toISOString() })
+    .update({
+      runner_id: user.id,
+      status: 'runner_assigned',
+      runner_assigned_at: new Date().toISOString(),
+      admin_delivered: isAdminDelivery,
+    })
     .eq('id', orderId)
     .is('runner_id', null)
     .in('status', ['awaiting_runner', 'confirmed'])

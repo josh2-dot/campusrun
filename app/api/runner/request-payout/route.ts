@@ -44,6 +44,16 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // Also persist bank details to runner_profiles. Two reasons:
+  //   1. Autofill the next payout request without asking again
+  //   2. Runner-funded orders read bank details from runner_profiles
+  //      (see api/runner/accept). A runner who has requested a payout
+  //      once is automatically bank-ready for the runner-funded flow.
+  await admin
+    .from('runner_profiles')
+    .update({ bank_name: bankName, account_number: accountNumber })
+    .eq('user_id', user.id)
+
   // Notify admin via WhatsApp deep link (server-side SMS fallback)
   const msg = `💰 CampusRun Payout Request\nRunner: ${profile.full_name}\nAmount: ₦${amount.toLocaleString()}\nBank: ${bankName}\nAccount: ${accountNumber}\nName: ${accountName}\n\nApprove in admin panel.`
 

@@ -43,6 +43,13 @@ export default function RunnerProfilePage() {
   // Payout sheet
   const [showPayoutSheet, setShowPayoutSheet] = useState(false)
   const [form, setForm] = useState({ bankName: '', accountNumber: '', accountName: '' })
+
+  // Payout account (persistent bank details on runner_profiles).
+  // Independent of a payout request — needed for runner-funded orders.
+  const [showBankSheet, setShowBankSheet] = useState(false)
+  const [bankForm, setBankForm] = useState({ bankName: '', accountNumber: '' })
+  const [bankSaving, setBankSaving] = useState(false)
+  const [bankError, setBankError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitDone, setSubmitDone] = useState(false)
 
@@ -110,6 +117,34 @@ export default function RunnerProfilePage() {
     } else {
       alert(error || 'Failed to submit. Try again.')
     }
+  }
+
+  // Persist bank details independent of a payout request. Runners
+  // need this on file BEFORE they can accept runner-funded orders
+  // (see api/runner/accept — NO_PAYOUT_ACCOUNT gate).
+  async function saveBankDetails() {
+    setBankError(null)
+    if (!bankForm.bankName || !bankForm.accountNumber) {
+      setBankError('Both fields are required'); return
+    }
+    if (!/^\d{10}$/.test(bankForm.accountNumber)) {
+      setBankError('Account number must be 10 digits'); return
+    }
+    setBankSaving(true)
+    const res = await fetch('/api/runner/bank-details', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bankName: bankForm.bankName,
+        accountNumber: bankForm.accountNumber,
+      }),
+    })
+    const { success, error } = await res.json()
+    setBankSaving(false)
+    if (!success) { setBankError(error || 'Failed to save'); return }
+    // Reflect the change locally without a full reload
+    setProfile(p => p ? { ...p, bank_name: bankForm.bankName, account_number: bankForm.accountNumber } : p)
+    setShowBankSheet(false)
   }
 
   const pendingRequest = payoutRequests.find(p => p.status === 'pending')
@@ -268,6 +303,46 @@ export default function RunnerProfilePage() {
           </div>
         </div>
 
+        {/* ─── Payout account (persistent bank details) ─────────
+            Where the runner puts their bank details on file. Read by
+            runner-funded flow — required before accepting orders where
+            money gets transferred to the runner before pickup.
+            Also autofills the payout request sheet. */}
+        <div style={{ background: 'white', borderRadius: 16, padding: 16, border: '1px solid #E8E2D8' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: profile?.bank_name ? 12 : 4 }}>
+            <p style={{ fontWeight: 800, fontSize: 14, color: '#15130F', margin: 0 }}>Payout account</p>
+            <button
+              onClick={() => {
+                setBankForm({ bankName: profile?.bank_name ?? '', accountNumber: profile?.account_number ?? '' })
+                setBankError(null)
+                setShowBankSheet(true)
+              }}
+              className="press"
+              style={{ background: 'rgba(255,107,43,0.1)', color: '#FF6B2B', border: 'none', fontSize: 12, fontWeight: 800, padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', minHeight: 32 }}
+            >
+              {profile?.bank_name ? 'Edit' : 'Add bank'}
+            </button>
+          </div>
+
+          {profile?.bank_name && profile?.account_number ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#F5F0E8', borderRadius: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(29,185,84,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                ✓
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontWeight: 800, fontSize: 13, color: '#15130F', margin: 0 }}>{profile.bank_name}</p>
+                <p style={{ fontSize: 11, color: '#8B857B', fontWeight: 700, margin: '2px 0 0', fontFamily: 'monospace', letterSpacing: '0.02em' }}>
+                  {profile.account_number}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: 12, color: '#8B857B', fontWeight: 600, margin: '4px 0 0', lineHeight: 1.5 }}>
+              Not set. Add a bank to receive payouts and unlock runner-funded orders.
+            </p>
+          )}
+        </div>
+
         {/* Payout history */}
         {payoutRequests.length > 0 && (
           <div style={{ background: 'white', borderRadius: 16, padding: 16, border: '1px solid #E8E2D8' }}>
@@ -371,6 +446,65 @@ export default function RunnerProfilePage() {
           </div>
         )}
       </div>
+
+      {/* ─── Bank details sheet ────────────────────────────────
+          Small edit-only sheet for the persistent payout account.
+          Same visual pattern as the payout request sheet but simpler
+          (no amount, no account name — those get filled at request time). */}
+      {showBankSheet && (
+        <div role="dialog" aria-modal="true"
+          onClick={() => !bankSaving && setShowBankSheet(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 430, background: '#FDFBF7', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: '18px 20px calc(28px + env(safe-area-inset-bottom))' }}>
+            <div style={{ width: 36, height: 4, background: '#D6CFC0', borderRadius: 2, margin: '0 auto 14px' }} />
+            <p className="label-cap" style={{ fontSize: 10, color: '#8B857B', margin: 0 }}>Payout account</p>
+            <h2 className="font-display" style={{ fontSize: 22, margin: '2px 0 4px', color: '#15130F' }}>
+              {profile?.bank_name ? 'Update your bank' : 'Add your bank'}
+            </h2>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#8B857B', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Where earnings land, and where runner-funded orders send you the food money.
+            </p>
+
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#8B857B', marginBottom: 4 }}>Bank</label>
+            <select
+              value={bankForm.bankName}
+              onChange={e => setBankForm(f => ({ ...f, bankName: e.target.value }))}
+              style={{ width: '100%', background: 'white', border: '1.5px solid #E0DACE', borderRadius: 12, padding: 14, fontSize: 15, fontWeight: 700, color: '#15130F', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 12, minHeight: 52 }}
+            >
+              <option value="">— Choose your bank —</option>
+              {BANK_NAMES.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#8B857B', marginBottom: 4 }}>Account number</label>
+            <input
+              type="tel"
+              inputMode="numeric"
+              pattern="\d*"
+              value={bankForm.accountNumber}
+              onChange={e => setBankForm(f => ({ ...f, accountNumber: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+              placeholder="10 digits"
+              style={{ width: '100%', background: 'white', border: '1.5px solid #E0DACE', borderRadius: 12, padding: 14, fontSize: 16, fontWeight: 700, color: '#15130F', fontFamily: 'monospace', letterSpacing: '0.05em', boxSizing: 'border-box', marginBottom: 12, minHeight: 52 }}
+            />
+
+            {bankError && (
+              <p style={{ color: '#FF3B30', fontSize: 12, fontWeight: 700, margin: '0 0 8px' }}>
+                {bankError}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <button onClick={() => setShowBankSheet(false)} disabled={bankSaving} className="press"
+                style={{ flex: 1, background: '#F0EBE0', color: '#4A463F', fontWeight: 800, fontSize: 15, padding: 14, borderRadius: 14, border: 'none', cursor: bankSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', minHeight: 48 }}>
+                Cancel
+              </button>
+              <button onClick={saveBankDetails} disabled={bankSaving} className="press"
+                style={{ flex: 1, background: bankSaving ? '#cc5522' : '#FF6B2B', color: 'white', fontWeight: 900, fontSize: 15, padding: 14, borderRadius: 14, border: 'none', cursor: bankSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: bankSaving ? 0.7 : 1, minHeight: 48 }}>
+                {bankSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

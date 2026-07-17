@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     if (!runnerProfile?.bank_name || !runnerProfile?.account_number) {
       return NextResponse.json({
         success: false,
-        error: 'Add your bank account before taking runner-funded orders — go to Earnings → Add account.',
+        error: 'Add your bank account first — Profile → Payout account.',
         code: 'NO_PAYOUT_ACCOUNT',
       }, { status: 400 })
     }

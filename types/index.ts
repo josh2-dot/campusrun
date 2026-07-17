@@ -10,6 +10,13 @@ export type OrderStatus =
   | 'delivered'
   | 'cancelled'
   | 'needs_attention'
+  // Runner-funded flow — off-campus orders where the runner receives
+  // food-purchase money in their own account and buys the food themselves.
+  | 'runner_funded_pending_transfer'
+  | 'runner_funded_awaiting_pickup'
+  | 'runner_funded_returning'
+
+export type PaymentModel = 'restaurant_paid' | 'runner_funded'
 
 export type PaymentStatus = 'pending' | 'success' | 'failed'
 export type PaymentChannel = 'transfer' | 'ussd' | 'card'

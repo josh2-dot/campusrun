@@ -119,6 +119,18 @@ export default function AdminRestaurantsPage() {
     setSaving(null)
   }
 
+  // Toggle whether this restaurant routes through the runner-funded
+  // flow. Used for unregistered off-campus restaurants without payment
+  // integration. See supabase-schema addition + api/admin/restaurants.
+  async function toggleRunnerFunded(r: Restaurant) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cur = (r as any).requires_runner_funded ?? false
+    setSaving(r.id)
+    await api('toggle_runner_funded', r.id, !cur)
+    await load()
+    setSaving(null)
+  }
+
   async function toggleItem(item: MenuItem) {
     setSaving(item.id)
     await api('toggle_item', item.id, !item.is_available)
@@ -225,6 +237,37 @@ export default function AdminRestaurantsPage() {
                   >
                     {saving === r.id ? '...' : r.is_open ? 'OPEN' : 'CLOSED'}
                   </button>
+                  {/* Runner-funded flag — visible always so admin can flip
+                      unregistered off-campus restaurants without diving
+                      into the menu. Yellow signals "pilot flow"; grey =
+                      standard restaurant-paid. */}
+                  {(() => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const isRF = !!(r as any).requires_runner_funded
+                    return (
+                      <button
+                        onClick={() => toggleRunnerFunded(r)}
+                        disabled={saving === r.id}
+                        className="press"
+                        aria-label={isRF ? 'Turn off runner-funded routing' : 'Enable runner-funded routing'}
+                        style={{
+                          background: isRF ? 'rgba(255,184,0,0.1)' : 'transparent',
+                          border: `1px solid ${isRF ? 'rgba(255,184,0,0.3)' : 'var(--line, #2A2825)'}`,
+                          color: isRF ? '#FFB800' : 'var(--ink-3, #6B6660)',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          padding: '4px 10px',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          opacity: saving === r.id ? 0.6 : 1,
+                          letterSpacing: '0.03em',
+                        }}
+                      >
+                        {isRF ? '💸 RUNNER PAYS' : 'runner pays?'}
+                      </button>
+                    )
+                  })()}
                   <button
                     onClick={() => setExpanded(isExpanded ? null : r.id)}
                     style={{ background: 'none', border: 'none', color: 'var(--ink-3, #6B6660)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}

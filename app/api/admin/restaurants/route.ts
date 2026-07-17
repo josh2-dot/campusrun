@@ -32,6 +32,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
+  // Flag an unregistered off-campus restaurant to route through the
+  // runner-funded flow. When true, orders to this restaurant get
+  // payment_model='runner_funded' at creation and the runner walks in
+  // as a paying customer instead of relying on a Paystack subaccount.
+  // See app/api/runner/accept + app/api/payments/webhook.
+  if (action === 'toggle_runner_funded') {
+    await admin.from('restaurants').update({ requires_runner_funded: value }).eq('id', id)
+    return NextResponse.json({ success: true })
+  }
+
   if (action === 'update_bank_field') {
     const { field, value: fieldVal } = value as { field: string; value: string }
     const ALLOWED = ['bank_name', 'account_number', 'account_name'] as const

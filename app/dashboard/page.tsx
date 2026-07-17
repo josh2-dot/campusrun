@@ -82,6 +82,11 @@ function IncomingAlert({ order, onAccept, onDecline, accepting }: {
   }, [])
 
   const restaurant = order.restaurant as { name: string } | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isRunnerFunded = (order as any).payment_model === 'runner_funded'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const foodTotal = (order as any).food_total ?? 0
+  const totalToReceive = isRunnerFunded ? foodTotal + (order.runner_earnings ?? 300) : (order.runner_earnings ?? 300)
   const C = 56; const r = 24
   const len = 2 * Math.PI * r
   const offset = len * (1 - seconds / TOTAL)
@@ -96,6 +101,14 @@ function IncomingAlert({ order, onAccept, onDecline, accepting }: {
             <h2 className="font-display" style={{ fontSize: 22, margin: '2px 0 0', color: '#15130F' }}>
               Earn {'\u20A6'}{(order.runner_earnings || 300).toLocaleString()}
             </h2>
+            {isRunnerFunded && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, background: 'rgba(255,184,0,0.12)', border: '1px solid rgba(255,184,0,0.35)', borderRadius: 8, padding: '4px 8px' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#CC9400' }} />
+                <span style={{ fontSize: 10, fontWeight: 900, color: '#CC9400', letterSpacing: '0.04em' }}>
+                  YOU BUY FOOD · {'\u20A6'}{totalToReceive.toLocaleString()} SENT
+                </span>
+              </div>
+            )}
           </div>
           <span className="font-mono" style={{ fontWeight: 700, fontSize: 11, color: '#8B857B' }}>{order.order_ref}</span>
         </div>
@@ -373,11 +386,18 @@ export default function RunnerDashboard() {
   async function acceptOrder(orderId: string) {
     setAccepting(orderId)
     const res = await fetch('/api/runner/accept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) })
-    const { success, error } = await res.json()
+    const { success, error, isRunnerFunded } = await res.json()
     setAccepting(null)
     setIncomingOrder(null)
-    if (success) router.push(`/order/${orderId}`)
-    else { alert(error || 'Order already taken'); fetchAvailableOrders() }
+    if (success) {
+      router.push(`/order/${orderId}`)
+    } else {
+      // Runner-funded gating errors deserve better than "already taken"
+      alert(error || 'Order already taken')
+      // Don't refresh the list on eligibility errors — the order is
+      // still there for someone else. Only refresh on generic errors.
+      if (!isRunnerFunded) fetchAvailableOrders()
+    }
   }
 
   const today = useMemo(() => {
@@ -532,11 +552,35 @@ export default function RunnerDashboard() {
               ) : availableOrders.map(order => {
                 const restaurant = order.restaurant as { name: string } | null
                 const isAccepting = accepting === order.id
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const isRunnerFunded = (order as any).payment_model === 'runner_funded'
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const foodTotal = (order as any).food_total ?? 0
+                const totalToReceive = foodTotal + (order.runner_earnings ?? 0)
                 return (
-                  <div key={order.id} style={{ background: 'white', border: '2px solid #FF6B2B', borderRadius: 14, padding: '14px 16px', marginBottom: 10 }}>
+                  <div
+                    key={order.id}
+                    style={{
+                      background: 'white',
+                      // Yellow border for runner-funded — signals "you'll
+                      // spend money before pickup" at a glance.
+                      border: isRunnerFunded ? '2px solid #FFB800' : '2px solid #FF6B2B',
+                      borderRadius: 14,
+                      padding: '14px 16px',
+                      marginBottom: 10,
+                    }}
+                  >
+                    {isRunnerFunded && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, background: 'rgba(255,184,0,0.1)', border: '1px solid rgba(255,184,0,0.3)', borderRadius: 8, padding: '6px 10px' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#CC9400' }} />
+                        <span style={{ fontSize: 10, fontWeight: 900, color: '#CC9400', letterSpacing: '0.04em' }}>
+                          YOU BUY FOOD · {'\u20A6'}{totalToReceive.toLocaleString()} SENT TO YOU
+                        </span>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
                       <div>
-                        <p style={{ fontWeight: 800, fontSize: 14, color: '#FF6B2B', margin: 0 }}>{order.order_ref}</p>
+                        <p style={{ fontWeight: 800, fontSize: 14, color: isRunnerFunded ? '#CC9400' : '#FF6B2B', margin: 0 }}>{order.order_ref}</p>
                         <p style={{ fontSize: 12, color: '#8B857B', fontWeight: 600, margin: '3px 0 0' }}>{'\uD83C\uDFEA'} {restaurant?.name}</p>
                         <p style={{ fontSize: 12, color: '#8B857B', fontWeight: 600, margin: '2px 0 0' }}>{'\uD83D\uDCCD'} {order.delivery_address}</p>
                         <p style={{ fontSize: 12, color: '#8B857B', fontWeight: 600, margin: '4px 0 0' }}>{Array.isArray(order.items) ? order.items.length : 0} item(s)</p>
@@ -545,8 +589,8 @@ export default function RunnerDashboard() {
                         {'\u20A6'}{(order.runner_earnings || 300).toLocaleString()}
                       </div>
                     </div>
-                    <button onClick={() => acceptOrder(order.id)} disabled={!!accepting} className="press" style={{ width: '100%', background: isAccepting ? '#cc5522' : '#FF6B2B', color: 'white', fontWeight: 900, fontSize: 15, padding: '13px', borderRadius: 12, border: 'none', cursor: accepting ? 'not-allowed' : 'pointer', fontFamily: "'Nunito', sans-serif", opacity: accepting && !isAccepting ? 0.5 : 1 }}>
-                      {isAccepting ? 'Accepting...' : '\u2713 Accept this order'}
+                    <button onClick={() => acceptOrder(order.id)} disabled={!!accepting} className="press" style={{ width: '100%', background: isAccepting ? (isRunnerFunded ? '#997000' : '#cc5522') : (isRunnerFunded ? '#CC9400' : '#FF6B2B'), color: 'white', fontWeight: 900, fontSize: 15, padding: '13px', borderRadius: 12, border: 'none', cursor: accepting ? 'not-allowed' : 'pointer', fontFamily: "'Nunito', sans-serif", opacity: accepting && !isAccepting ? 0.5 : 1, minHeight: 48 }}>
+                      {isAccepting ? 'Accepting...' : (isRunnerFunded ? 'Accept · you buy the food' : '\u2713 Accept this order')}
                     </button>
                   </div>
                 )

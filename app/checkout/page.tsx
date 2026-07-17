@@ -109,6 +109,12 @@ export default function CheckoutPage() {
 
     // For pantry-only orders, use the pantry restaurant's ID for the insert
     let effectiveRestaurantId = restaurantId
+    // Track whether this order routes through the runner-funded flow:
+    // set true if the restaurant is flagged requires_runner_funded (used
+    // for unregistered off-campus restaurants that need the runner to
+    // walk in as a paying customer). Set at order creation so downstream
+    // (webhook + runner accept) can branch without re-querying.
+    let paymentModel: 'restaurant_paid' | 'runner_funded' = 'restaurant_paid'
     if (!effectiveRestaurantId) {
       const { data: pantryRest } = await supabase
         .from('restaurants').select('id').eq('is_pantry', true).limit(1).maybeSingle()
@@ -117,14 +123,20 @@ export default function CheckoutPage() {
         setLoading(false); return
       }
       effectiveRestaurantId = pantryRest.id
+      // Pantry orders are always restaurant_paid — pantry is internal.
     } else {
-      // Re-check the food restaurant is still open
+      // Re-check the food restaurant is still open + fetch the runner-
+      // funded flag in the same round-trip.
       const { data: restaurant } = await supabase
-        .from('restaurants').select('is_open').eq('id', restaurantId).single()
+        .from('restaurants')
+        .select('is_open, requires_runner_funded')
+        .eq('id', restaurantId)
+        .single()
       if (!restaurant?.is_open) {
         setError('This restaurant just closed. Please choose another restaurant.')
         setRestaurantOpen(false); setLoading(false); return
       }
+      if (restaurant.requires_runner_funded) paymentModel = 'runner_funded'
     }
 
     const { data: profile } = await supabase
@@ -146,6 +158,7 @@ export default function CheckoutPage() {
         broadcast_count: 0,
         order_notes:   orderNotes.trim() || null,
         scheduled_for: scheduleEnabled && scheduledFor ? scheduledFor : null,
+        payment_model: paymentModel,
       })
       .select()
       .single()

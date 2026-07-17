@@ -5,6 +5,11 @@ import { sendPushToUser, sendPushToAvailableRunners } from '@/lib/send-push'
 import { transferToRestaurant } from '../transfer/restaurant'
 import { captureError } from '@/lib/sentry'
 
+// Two flows share this webhook:
+//   1. Customer paying for an order (existing) — CR_{orderId}_{ts} refs
+//   2. Runner returning unspent funds after a failed pickup (new)
+//      — RETURN-{orderId} refs, marked by the runner-funded flow
+
 export async function POST(request: NextRequest) {
   const body      = await request.text()
   const signature = request.headers.get('x-paystack-signature')
@@ -26,6 +31,16 @@ export async function POST(request: NextRequest) {
 
   if (event.event === 'charge.success') {
     const { reference, metadata } = event.data
+
+    // ── Branch: runner-funded return payment ─────────────────────────
+    // These references have the form RETURN-{orderId}. The runner has
+    // just paid unspent funds back after a failed pickup. Advance the
+    // order to cancelled and refund the customer.
+    if (typeof reference === 'string' && reference.startsWith('RETURN-')) {
+      return handleReturnPayment(reference, event.data)
+    }
+
+    // ── Existing branch: customer paying for an order ────────────────
     const orderId = metadata?.order_id
     if (!orderId) return NextResponse.json({ received: true })
 
@@ -36,14 +51,18 @@ export async function POST(request: NextRequest) {
       .update({ status: 'success', channel: event.data.channel, paid_at: new Date().toISOString() })
       .eq('paystack_ref', reference)
 
-    // Fetch status AND scheduled_for
-    const { data: order } = await supabase
+    // Include payment_model so we can skip restaurant transfer for
+    // runner-funded orders (they have no restaurant subaccount).
+    const { data: orderRaw } = await supabase
       .from('orders')
-      .select('status, customer_id, order_ref, scheduled_for')
+      .select('status, customer_id, order_ref, scheduled_for, payment_model')
       .eq('id', orderId)
       .single()
 
-    if (!order || !['pending', 'confirmed'].includes(order.status)) {
+    if (!orderRaw) return NextResponse.json({ received: true })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const order = orderRaw as any
+    if (!['pending', 'confirmed'].includes(order.status)) {
       return NextResponse.json({ received: true })
     }
 
@@ -52,19 +71,22 @@ export async function POST(request: NextRequest) {
     const isScheduled = order.scheduled_for && new Date(order.scheduled_for) > new Date()
 
     if (isScheduled) {
-      // ── Scheduled: confirm but don't broadcast — watchdog handles it ──
       const timeLabel = new Date(order.scheduled_for!).toLocaleTimeString('en-NG', {
         hour: '2-digit', minute: '2-digit',
       })
       await sendPushToUser(order.customer_id, {
-        title: '\u2705 Payment confirmed \u2014 order scheduled!',
+        title: '\u2705 Payment confirmed — order scheduled!',
         body: `Your order ${order.order_ref} is confirmed. We'll find a runner for ${timeLabel}.`,
         url: `/track/${orderId}`,
         tag: 'order-scheduled',
       })
     } else {
-      // ── Immediate: push customer + broadcast to runners ──
-      await transferToRestaurant(orderId)
+      // Only trigger restaurant transfer for restaurant_paid orders.
+      // Runner-funded orders queue a runner transfer at runner-accept
+      // time instead (see api/runner/accept + transfer/runner).
+      if (order.payment_model !== 'runner_funded') {
+        await transferToRestaurant(orderId)
+      }
       await sendPushToUser(order.customer_id, {
         title: '\u2705 Payment received!',
         body: `Order ${order.order_ref} confirmed. Finding a runner for you now.`,
@@ -73,6 +95,83 @@ export async function POST(request: NextRequest) {
       })
       await triggerAutoAllocation(orderId, supabase)
     }
+  }
+
+  return NextResponse.json({ received: true })
+}
+
+// Runner has paid back the unspent funds. Complete the return flow.
+async function handleReturnPayment(reference: string, chargeData: { amount?: number; channel?: string }) {
+  void chargeData
+  const orderId = reference.slice('RETURN-'.length)
+  const supabase = createAdminClient()
+
+  const { data: orderRaw } = await supabase
+    .from('orders')
+    .select('id, order_ref, customer_id, runner_id, status, runner_funded_return_reason')
+    .eq('id', orderId)
+    .single()
+
+  if (!orderRaw) return NextResponse.json({ received: true })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const order = orderRaw as any
+  if (order.status !== 'runner_funded_returning') {
+    // Already processed or unexpected state — ack and drop.
+    return NextResponse.json({ received: true })
+  }
+
+  await supabase
+    .from('orders')
+    .update({
+      status: 'cancelled',
+      cancelled_by: 'runner',
+      cancel_reason: `runner_funded_return:${order.runner_funded_return_reason ?? 'unknown'}`,
+      cancelled_at: new Date().toISOString(),
+      runner_funded_returned_ref: reference,
+      runner_funded_returned_at: new Date().toISOString(),
+    })
+    .eq('id', order.id)
+
+  // Refund the customer for the full order. We queue a customer refund
+  // row that admin processes; keeping symmetry with the runner transfer
+  // queue means no direct Paystack action from the webhook.
+  await supabase.from('customer_refund_queue').insert({
+    order_id: order.id,
+    order_ref: order.order_ref,
+    customer_id: order.customer_id,
+    reason: `Runner-funded return: ${order.runner_funded_return_reason ?? 'restaurant unavailable'}`,
+    status: 'pending',
+  }).select().single().then(() => {}, () => {}) // fine if table doesn't exist yet — see note below
+
+  // Notify customer + runner
+  await sendPushToUser(order.customer_id, {
+    title: '↩️ Your order was refunded',
+    body: `We couldn't complete order ${order.order_ref}. A refund is on the way.`,
+    url: `/orders`,
+    tag: 'order-refunded',
+  })
+  if (order.runner_id) {
+    await sendPushToUser(order.runner_id, {
+      title: '✅ Return complete',
+      body: `Funds for ${order.order_ref} returned. Thanks for the honest try.`,
+      url: `/dashboard`,
+      tag: 'return-complete',
+    })
+  }
+
+  // Alert Lymora
+  if (process.env.ADMIN_PHONE && process.env.TERMII_API_KEY) {
+    const msg = `↩️ Runner-funded return complete\nOrder: ${order.order_ref}\nReason: ${order.runner_funded_return_reason}\n\nCustomer refund queued.`
+    await fetch('https://api.ng.termii.com/api/sms/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: process.env.ADMIN_PHONE,
+        from: process.env.TERMII_SENDER_ID ?? 'CampusRun',
+        sms: msg, type: 'plain', channel: 'generic',
+        api_key: process.env.TERMII_API_KEY,
+      }),
+    }).catch(() => {})
   }
 
   return NextResponse.json({ received: true })
@@ -93,8 +192,6 @@ async function triggerAutoAllocation(orderId: string, supabase: ReturnType<typeo
     .eq('is_available', true)
 
   if (!runners?.length) {
-    // No runners online — set awaiting_runner so watchdog retries when one comes online.
-    // Customer sees 'Finding your runner' not an error state.
     await supabase.from('orders').update({
       status:          'awaiting_runner',
       broadcast_at:    new Date().toISOString(),

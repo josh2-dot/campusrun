@@ -3,6 +3,12 @@
 // Admin API for managing the runner-funded allowlist.
 // Uses createAdminClient() so writes bypass RLS on runner_funded_allowlist.
 //
+// The read paths use explicit lookups instead of PostgREST joins for
+// the same reason as api/admin/runner-transfers: the schema cache may
+// not have picked up the FKs on the new runner_funded_allowlist table
+// yet. Older, well-established joins (runner_profiles → users) still
+// work fine because their FKs are already cached.
+//
 //   GET    — returns { allowlist, candidates }
 //   POST   — { action: 'add', runner_id, note? } | { action: 'remove', runner_id }
 
@@ -24,36 +30,47 @@ export async function GET() {
 
   const admin = createAdminClient()
 
-  // Allowlist rows with runner name/phone joined
-  const { data: rows } = await admin
+  // Allowlist rows — no joins, straight select.
+  const { data: rowsRaw } = await admin
     .from('runner_funded_allowlist')
-    .select('runner_id, added_at, note, runner:users!runner_id(full_name, phone)')
+    .select('runner_id, added_at, note, added_by')
     .order('added_at', { ascending: false })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = (rowsRaw ?? []) as any[]
 
-  // All runners (candidates for adding)
-  const { data: runners } = await admin
+  // Explicit lookup for runner name/phone
+  const allowlistRunnerIds = Array.from(new Set(rows.map(r => r.runner_id)))
+  const { data: allowlistUsersData } = allowlistRunnerIds.length
+    ? await admin.from('users').select('id, full_name, phone').in('id', allowlistRunnerIds)
+    : { data: [] }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allowlistUsers = (allowlistUsersData ?? []) as any[]
+  const userById = new Map(allowlistUsers.map(u => [u.id, u]))
+
+  const allowlist = rows.map(r => ({
+    runner_id: r.runner_id,
+    added_at: r.added_at,
+    note: r.note,
+    runner: userById.get(r.runner_id) ?? null,
+  }))
+
+  // Candidates — all runners not already on the allowlist. The runner_profiles
+  // → users join is an old, stable FK so this select works even before schema
+  // cache reload.
+  const { data: runnersData } = await admin
     .from('runner_profiles')
     .select('user_id, total_deliveries, bank_name, account_number, users!inner(full_name, phone)')
     .order('total_deliveries', { ascending: false })
 
-  const allowlisted = new Set((rows ?? []).map(r => r.runner_id))
-
+  const allowlisted = new Set(rows.map(r => r.runner_id))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const candidates = (runners ?? []).filter((r: any) => !allowlisted.has(r.user_id)).map((r: any) => ({
+  const candidates = ((runnersData ?? []) as any[]).filter(r => !allowlisted.has(r.user_id)).map(r => ({
     user_id: r.user_id,
     full_name: Array.isArray(r.users) ? r.users[0]?.full_name : r.users?.full_name ?? '?',
     phone: Array.isArray(r.users) ? r.users[0]?.phone : r.users?.phone ?? '',
     total_deliveries: r.total_deliveries ?? 0,
     bank_name: r.bank_name,
     account_number: r.account_number,
-  }))
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allowlist = (rows ?? []).map((r: any) => ({
-    runner_id: r.runner_id,
-    added_at: r.added_at,
-    note: r.note,
-    runner: Array.isArray(r.runner) ? r.runner[0] ?? null : r.runner,
   }))
 
   return NextResponse.json({ allowlist, candidates })

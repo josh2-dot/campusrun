@@ -3,6 +3,17 @@
 // GET  — list pending + recent-paid runner transfers, grouped by runner
 // POST — mark selected transfer IDs as sent, stamp the linked order,
 //        and advance the order state to runner_funded_awaiting_pickup
+//
+// Uses explicit lookups instead of PostgREST joins. The previous version
+// used `.select('*, runner:users!runner_id(...), order:orders!order_id(...)')`
+// which depends on PostgREST's schema cache detecting the foreign keys
+// on runner_transfer_queue. When the migration is run against a live
+// project, the schema cache doesn't automatically pick up the new FKs
+// until someone runs `NOTIFY pgrst, 'reload schema'` or hits "Reload
+// schema cache" in the Supabase dashboard. Until then, the joined
+// select fails silently and the admin page shows nothing even when
+// there are queued transfers. Explicit lookups don't have that failure
+// mode.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
@@ -14,7 +25,10 @@ async function requireAdmin() {
   if (!user) return { ok: false as const, status: 401, error: 'Unauthorized' }
   const { data: profile } = await supabase
     .from('users').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') return { ok: false as const, status: 403, error: 'Forbidden' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((profile as any)?.role !== 'admin') {
+    return { ok: false as const, status: 403, error: 'Forbidden' }
+  }
   return { ok: true as const, userId: user.id }
 }
 
@@ -24,18 +38,54 @@ export async function GET() {
 
   const admin = createAdminClient()
 
-  const { data: rows } = await admin
+  // 1. Pull raw queue rows — no joins, so this works regardless of the
+  //    PostgREST schema cache state.
+  const { data: rowsRaw, error: queueError } = await admin
     .from('runner_transfer_queue')
-    .select('*, runner:users!runner_id(full_name, phone), order:orders!order_id(status, delivery_address, restaurant:restaurants(name))')
+    .select('*')
     .order('created_at', { ascending: false })
     .limit(200)
 
+  if (queueError) {
+    return NextResponse.json(
+      { error: `Failed to load queue: ${queueError.message}`, runners: [], totalPending: 0 },
+      { status: 500 }
+    )
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const list = (rows ?? []) as any[]
+  const rows = (rowsRaw ?? []) as any[]
 
-  // Group by runner (matches the visual grouping in the restaurant
-  // payments page — one card per recipient with all their pending
-  // transfers underneath).
+  // If genuinely empty, return early — no need to hit the other tables.
+  if (rows.length === 0) {
+    return NextResponse.json({ runners: [], totalPending: 0 })
+  }
+
+  // 2. Explicit lookups. Batch by unique IDs to keep this O(3 queries)
+  //    regardless of how many transfers exist.
+  const runnerIds = Array.from(new Set(rows.map(r => r.runner_id).filter(Boolean)))
+  const orderIds  = Array.from(new Set(rows.map(r => r.order_id).filter(Boolean)))
+
+  const [{ data: usersData }, { data: ordersData }] = await Promise.all([
+    admin.from('users').select('id, full_name, phone').in('id', runnerIds),
+    admin.from('orders').select('id, status, delivery_address, restaurant_id').in('id', orderIds),
+  ])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const users = (usersData ?? []) as any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orders = (ordersData ?? []) as any[]
+
+  const restaurantIds = Array.from(new Set(orders.map(o => o.restaurant_id).filter(Boolean)))
+  const { data: restaurantsData } = restaurantIds.length
+    ? await admin.from('restaurants').select('id, name').in('id', restaurantIds)
+    : { data: [] }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const restaurants = (restaurantsData ?? []) as any[]
+
+  const userById = new Map(users.map(u => [u.id, u]))
+  const orderById = new Map(orders.map(o => [o.id, o]))
+  const restaurantById = new Map(restaurants.map(r => [r.id, r]))
+
+  // 3. Group by runner. Same shape as before so the client doesn't change.
   const byRunner = new Map<string, {
     runner_id: string
     runner_name: string
@@ -45,8 +95,8 @@ export async function GET() {
     transfers: unknown[]
   }>()
 
-  for (const r of list) {
-    const runner = Array.isArray(r.runner) ? r.runner[0] : r.runner
+  for (const r of rows) {
+    const runner = userById.get(r.runner_id)
     if (!byRunner.has(r.runner_id)) {
       byRunner.set(r.runner_id, {
         runner_id: r.runner_id,
@@ -62,10 +112,8 @@ export async function GET() {
       group.pendingAmount += r.amount
       group.pendingCount += 1
     }
-    const orderData = Array.isArray(r.order) ? r.order[0] : r.order
-    const restaurant = orderData?.restaurant
-      ? (Array.isArray(orderData.restaurant) ? orderData.restaurant[0] : orderData.restaurant)
-      : null
+    const order = orderById.get(r.order_id)
+    const restaurant = order?.restaurant_id ? restaurantById.get(order.restaurant_id) : null
     group.transfers.push({
       id: r.id,
       order_id: r.order_id,
@@ -79,7 +127,7 @@ export async function GET() {
       account_number: r.account_number,
       account_name: r.account_name,
       restaurant_name: restaurant?.name ?? '',
-      delivery_address: orderData?.delivery_address ?? '',
+      delivery_address: order?.delivery_address ?? '',
     })
   }
 
@@ -103,21 +151,20 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Load the transfers we're about to mark paid — we need the order_ids
-  // to advance order state atomically after.
-  const { data: transfers } = await admin
+  const { data: transfersRaw } = await admin
     .from('runner_transfer_queue')
     .select('id, order_id, runner_id, amount, order_ref')
     .in('id', transferIds)
     .eq('status', 'pending')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const transfers = (transfersRaw ?? []) as any[]
 
-  if (!transfers?.length) {
+  if (!transfers.length) {
     return NextResponse.json({ error: 'No pending transfers to mark' }, { status: 400 })
   }
 
   const now = new Date().toISOString()
 
-  // Mark queue rows paid
   await admin
     .from('runner_transfer_queue')
     .update({
@@ -128,8 +175,6 @@ export async function POST(request: NextRequest) {
     })
     .in('id', transferIds)
 
-  // Advance the linked orders to runner_funded_awaiting_pickup and stamp
-  // transferred_at on each. Runner will see the "funds sent, go buy" UI.
   for (const t of transfers) {
     await admin
       .from('orders')
@@ -140,7 +185,6 @@ export async function POST(request: NextRequest) {
       .eq('id', t.order_id)
       .eq('status', 'runner_funded_pending_transfer')
 
-    // Push to runner: funds are in your account, go buy.
     await sendPushToUser(t.runner_id, {
       title: '💸 Funds sent — go buy',
       body: `₦${t.amount.toLocaleString()} for ${t.order_ref} is in your account. Head to the restaurant.`,

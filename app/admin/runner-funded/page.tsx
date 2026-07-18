@@ -52,38 +52,13 @@ export default function RunnerFundedAllowlistPage() {
   const [removeText, setRemoveText] = useState('')
 
   const load = useCallback(async () => {
-    // Load allowlist rows
-    const { data: rows } = await supabase
-      .from('runner_funded_allowlist')
-      .select('runner_id, added_at, note, runner:users!runner_id(full_name, phone)')
-      .order('added_at', { ascending: false })
-
-    // Load all runners (candidates for adding). Filter out already-allowlisted.
-    const { data: allRunners } = await supabase
-      .from('runner_profiles')
-      .select('user_id, total_deliveries, bank_name, account_number, users!inner(full_name, phone)')
-      .order('total_deliveries', { ascending: false })
-
-    const allowlisted = new Set((rows ?? []).map(r => r.runner_id))
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cands: Runner[] = (allRunners ?? []).filter((r: any) => !allowlisted.has(r.user_id)).map((r: any) => ({
-      user_id: r.user_id,
-      full_name: Array.isArray(r.users) ? r.users[0]?.full_name : r.users?.full_name ?? '?',
-      phone: Array.isArray(r.users) ? r.users[0]?.phone : r.users?.phone ?? '',
-      total_deliveries: r.total_deliveries ?? 0,
-      bank_name: r.bank_name,
-      account_number: r.account_number,
-    }))
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setAllowlist(((rows ?? []) as any[]).map(r => ({
-      runner_id: r.runner_id,
-      added_at: r.added_at,
-      note: r.note,
-      runner: Array.isArray(r.runner) ? r.runner[0] ?? null : r.runner,
-    })))
-    setCandidates(cands)
+    const res = await fetch('/api/admin/runner-funded')
+    if (res.status === 401 || res.status === 403) { router.push('/home'); return }
+    const data = await res.json()
+    setAllowlist(data.allowlist ?? [])
+    setCandidates(data.candidates ?? [])
     setLoading(false)
-  }, [supabase])
+  }, [router])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -95,13 +70,21 @@ export default function RunnerFundedAllowlistPage() {
   async function addRunner() {
     if (!selectedRunner) return
     setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('runner_funded_allowlist').insert({
-      runner_id: selectedRunner.user_id,
-      added_by: user?.id ?? null,
-      note: note.trim() || null,
+    const res = await fetch('/api/admin/runner-funded', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'add',
+        runner_id: selectedRunner.user_id,
+        note: note.trim() || undefined,
+      }),
     })
+    const data = await res.json()
     setSaving(false)
+    if (!res.ok) {
+      alert(data.error || 'Couldn\'t add runner. Try again.')
+      return
+    }
     setShowAdd(false)
     setSelectedRunner(null)
     setNote('')
@@ -109,7 +92,16 @@ export default function RunnerFundedAllowlistPage() {
   }
 
   async function removeRunner(row: AllowlistRow) {
-    await supabase.from('runner_funded_allowlist').delete().eq('runner_id', row.runner_id)
+    const res = await fetch('/api/admin/runner-funded', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'remove', runner_id: row.runner_id }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      alert(data.error || 'Couldn\'t remove runner. Try again.')
+      return
+    }
     setConfirmRemove(null)
     setRemoveText('')
     load()

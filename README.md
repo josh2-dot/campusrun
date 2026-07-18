@@ -1,76 +1,44 @@
-# Runner-Funded — Bank Details Follow-up
+# Runner-Funded — Allowlist API Fix
 
-Small addition to the main runner-funded bundle. Discovered while checking the runner profile screen: `runner_profiles.bank_name` and `runner_profiles.account_number` were never being populated by any code path. The existing "Request payout" flow writes bank details only to `payout_requests`, never persists them.
+Bug in the original runner-funded bundle: the allowlist admin page (`/admin/runner-funded`) did **client-side database writes** against `runner_funded_allowlist`. With Supabase Row-Level Security enabled (its default for new tables), those writes silently failed — no error surfaced to the user, no row created in the database.
 
-Without this fix, the runner-funded accept gate in the main bundle rejects **every** runner with "Add your bank account first" — the pilot literally cannot start.
+Every other admin action in your codebase routes through an API endpoint that uses `createAdminClient()` (service role, bypasses RLS). I built the runner-transfers admin correctly this way. Forgot to do the same for the allowlist. My mistake.
 
 ## What this bundle contains
 
-**4 files:**
+**2 files:**
 
 | Path | Change |
 |---|---|
-| `app/api/runner/bank-details/route.ts` | **NEW** — save/update endpoint that upserts bank_name + account_number to runner_profiles |
-| `app/api/runner/request-payout/route.ts` | **MODIFIED** — now also persists bank details to runner_profiles (autofills next payout, unlocks runner-funded) |
-| `app/api/runner/accept/route.ts` | **MODIFIED** — error message now points to actual UI location: "Profile → Payout account" |
-| `app/runner-profile/page.tsx` | **MODIFIED** — new "Payout account" card above Payout history, plus edit sheet with bank picker and account number input |
+| `app/api/admin/runner-funded/route.ts` | **NEW** — GET (list allowlist + candidates) + POST (add/remove via `{ action, runner_id, note? }`). Admin-gated, uses `createAdminClient()` for the writes. |
+| `app/admin/runner-funded/page.tsx` | **MODIFIED** — no more client-side `supabase.from(...).insert(...)`. Load + add + remove all route through the API. Errors from the API now surface as alerts instead of silently failing. |
 
-## Install order
+## Install
 
-1. Overlay these 4 files into your repo (they replace the corresponding files from the main runner-funded bundle where they overlap).
-2. Restart the app. No migration needed — uses columns that already exist.
-3. `npx tsc --noEmit` should be clean.
+Overlay these 2 files. No migration needed. Restart. `npx tsc --noEmit` clean.
 
-## What the runner sees
+## Verify the fix
 
-On `/runner-profile`, between the "Performance" stats and "Payout history", there's now a card:
+1. Open `/admin/runner-funded`.
+2. Tap **+ Add runner to allowlist**.
+3. Pick a runner.
+4. Tap **Add to allowlist**.
+5. Sheet closes, runner appears in the list.
+6. Confirm in the DB:
 
-**When bank details are not set:**
+   ```sql
+   SELECT runner_id, added_at, note
+   FROM runner_funded_allowlist;
+   ```
 
-```
-Payout account                              [Add bank]
-Not set. Add a bank to receive payouts and
-unlock runner-funded orders.
-```
+   You should see the row now.
 
-**When bank details are set:**
+7. That runner can now accept runner-funded orders.
 
-```
-Payout account                              [Edit]
-┌─────────────────────────────────────┐
-│  ✓  Opay                            │
-│     0812345678                      │
-└─────────────────────────────────────┘
-```
+If a runner was already saved (nothing there in the DB from earlier attempts to add), just re-add them through the fixed UI.
 
-Tapping "Add bank" or "Edit" opens a bottom sheet with:
-- Bank picker (18 Nigerian banks, dropdown)
-- Account number input (10 digits, numeric-only input mask)
-- Cancel + Save buttons
+## Why this happened
 
-Client-side validation:
-- Both fields required
-- Account number must be exactly 10 digits
+I wrote the runner-transfers admin page correctly (via `/api/admin/runner-transfers`). For the allowlist page I went "it's simpler, I'll just do it client-side" and skipped the API layer. The client-side call would have worked if I'd disabled RLS on the table in the migration, but that's the wrong fix — leaving RLS off on any table with sensitive data is a footgun even if it's admin-facing. The right fix is the API route, which is now here.
 
-Server-side validation matches the client, plus role check (runner or admin only). Idempotent — safe to save any number of times.
-
-## Backward compatibility
-
-Runners who have already been using the payout flow will have their bank details **retroactively populated** the next time they request a payout, because the modified `request-payout` route now also writes to `runner_profiles`.
-
-But for the pilot, the cleanest approach is:
-
-1. Ship this bundle.
-2. Message the allowlisted runners: *"open the app, go to Profile → Payout account, tap Add bank, save your details. This unlocks runner-funded orders for you."*
-3. They save once. They're set forever.
-
-## Smoke test
-
-1. As a runner, open `/runner-profile`.
-2. You should see the "Payout account" card. If your bank was previously set (via a payout request), it should show. If not, it shows "Not set".
-3. Tap "Add bank" (or "Edit"). Sheet opens.
-4. Pick a bank, enter 10 digits, tap Save.
-5. Sheet closes. Card now shows the bank + masked account number.
-6. Check DB: `SELECT bank_name, account_number FROM runner_profiles WHERE user_id = 'your-runner-id';` → should show what you just saved.
-7. Now try accepting a runner-funded order. Should work.
-8. Try entering fewer than 10 digits, hit Save. Should show "Account number must be 10 digits" without touching the DB.
+Lesson for the codebase: **every admin write goes through an API endpoint**. The `/api/admin/*` pattern isn't a suggestion.

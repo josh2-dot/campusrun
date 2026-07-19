@@ -110,20 +110,24 @@ export default function CheckoutPage() {
     // For pantry-only orders, use the pantry restaurant's ID for the insert
     let effectiveRestaurantId = restaurantId
     // Track whether this order routes through the runner-funded flow:
-    // set true if the restaurant is flagged requires_runner_funded (used
-    // for unregistered off-campus restaurants that need the runner to
-    // walk in as a paying customer). Set at order creation so downstream
-    // (webhook + runner accept) can branch without re-querying.
+    // set true if the effective restaurant (either the selected one, OR
+    // the pantry) has requires_runner_funded=true. If admin has flagged
+    // the pantry itself, they want it too — no special-casing.
     let paymentModel: 'restaurant_paid' | 'runner_funded' = 'restaurant_paid'
     if (!effectiveRestaurantId) {
+      // Pantry-only path: pull the pantry restaurant AND its runner-funded flag
       const { data: pantryRest } = await supabase
-        .from('restaurants').select('id').eq('is_pantry', true).limit(1).maybeSingle()
+        .from('restaurants')
+        .select('id, requires_runner_funded')
+        .eq('is_pantry', true)
+        .limit(1)
+        .maybeSingle()
       if (!pantryRest) {
         setError('Pantry is temporarily unavailable. Please try again later.')
         setLoading(false); return
       }
       effectiveRestaurantId = pantryRest.id
-      // Pantry orders are always restaurant_paid — pantry is internal.
+      if (pantryRest.requires_runner_funded) paymentModel = 'runner_funded'
     } else {
       // Re-check the food restaurant is still open + fetch the runner-
       // funded flag in the same round-trip.

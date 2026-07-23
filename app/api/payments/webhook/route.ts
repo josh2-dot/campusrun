@@ -29,6 +29,13 @@ export async function POST(request: NextRequest) {
 
   const event = JSON.parse(body)
 
+  // ── Branch: Paystack transfer events (runner-funded flow) ────────
+  // transfer.success / transfer.failed / transfer.reversed each carry
+  // the transfer's reference (RFT-{orderId}) and transfer_code (TRF_...).
+  if (event.event === 'transfer.success')  return handleTransferSuccess(event.data)
+  if (event.event === 'transfer.failed')   return handleTransferFailed(event.data)
+  if (event.event === 'transfer.reversed') return handleTransferReversed(event.data)
+
   if (event.event === 'charge.success') {
     const { reference, metadata } = event.data
 
@@ -231,4 +238,151 @@ async function sendSMS(phone: string, message: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ to: phone, from: process.env.TERMII_SENDER_ID ?? 'CampusRun', sms: message, type: 'plain', channel: 'generic', api_key: process.env.TERMII_API_KEY }),
   }).catch(() => {})
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Paystack transfer event handlers (runner-funded flow)
+// ───────────────────────────────────────────────────────────────────
+//  Each event carries transfer_code + reference (RFT-{orderId}).
+//  Reference is what our queue row uses to identify the transfer;
+//  we can look up by paystack_ref = reference and stamp the queue
+//  row + advance the order state.
+// ═══════════════════════════════════════════════════════════════════
+
+interface TransferEventData {
+  reference?: string
+  transfer_code?: string
+  status?: string
+  reason?: string
+  failures?: unknown
+  amount?: number
+}
+
+function orderIdFromRef(ref?: string): string | null {
+  if (!ref?.startsWith('RFT-')) return null
+  return ref.slice('RFT-'.length)
+}
+
+async function handleTransferSuccess(data: TransferEventData) {
+  const orderId = orderIdFromRef(data.reference)
+  if (!orderId) return NextResponse.json({ received: true })
+
+  const supabase = createAdminClient()
+
+  // Idempotency — if this webhook fires twice (Paystack retries), only
+  // advance the order once.
+  const { data: orderRaw } = await supabase
+    .from('orders')
+    .select('id, order_ref, runner_id, status')
+    .eq('id', orderId)
+    .single()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const order = orderRaw as any
+  if (!order) return NextResponse.json({ received: true })
+
+  // Only advance from pending_transfer. If we already advanced to
+  // awaiting_pickup (test mode synchronous), do nothing.
+  if (order.status === 'runner_funded_pending_transfer') {
+    await supabase
+      .from('orders')
+      .update({
+        status: 'runner_funded_awaiting_pickup',
+        runner_funded_transferred_at: new Date().toISOString(),
+      })
+      .eq('id', order.id)
+      .eq('status', 'runner_funded_pending_transfer')  // race-guard
+
+    await sendPushToUser(order.runner_id, {
+      title: '💸 Funds sent — go buy',
+      body: `₦${(data.amount ?? 0) / 100 || ''} for ${order.order_ref} is in your account.`.replace('  ', ' '),
+      url: `/order/${order.id}`,
+      tag: 'funds-sent',
+    })
+  }
+
+  // Stamp the queue row as success.
+  await supabase
+    .from('runner_transfer_queue')
+    .update({ status: 'success', paid_at: new Date().toISOString() })
+    .eq('paystack_ref', data.reference)
+
+  return NextResponse.json({ received: true })
+}
+
+async function handleTransferFailed(data: TransferEventData) {
+  const orderId = orderIdFromRef(data.reference)
+  if (!orderId) return NextResponse.json({ received: true })
+
+  const supabase = createAdminClient()
+
+  const { data: orderRaw } = await supabase
+    .from('orders')
+    .select('id, order_ref, runner_id, customer_id, status')
+    .eq('id', orderId)
+    .single()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const order = orderRaw as any
+  if (!order) return NextResponse.json({ received: true })
+
+  const failureReason = data.reason ?? (typeof data.failures === 'string' ? data.failures : 'Transfer failed at Paystack')
+
+  // Roll the order back so another runner can take it. If it's already
+  // moved past pending_transfer (unlikely — transfer.failed usually
+  // arrives quickly), we leave it alone and alert admin manually.
+  if (order.status === 'runner_funded_pending_transfer') {
+    await supabase
+      .from('orders')
+      .update({
+        status: 'awaiting_runner',
+        runner_id: null,
+        runner_assigned_at: null,
+        runner_funded_transfer_ref: null,
+        runner_funded_transfer_amount: null,
+        runner_funded_paystack_transfer_code: null,
+      })
+      .eq('id', order.id)
+  }
+
+  await supabase
+    .from('runner_transfer_queue')
+    .update({ status: 'failed', failure_reason: failureReason })
+    .eq('paystack_ref', data.reference)
+
+  // Push runner + admin. Runner needs to know they don't have the money.
+  if (order.runner_id) {
+    await sendPushToUser(order.runner_id, {
+      title: '❌ Transfer failed',
+      body: `We couldn't send ${order.order_ref} — try again or skip.`,
+      url: '/dashboard',
+      tag: 'transfer-failed',
+    })
+  }
+  if (process.env.ADMIN_PHONE) {
+    await sendSMS(process.env.ADMIN_PHONE, `⚠️ Runner-funded transfer FAILED\nOrder: ${order.order_ref}\nReason: ${failureReason}\nRef: ${data.reference}`)
+  }
+
+  return NextResponse.json({ received: true })
+}
+
+async function handleTransferReversed(data: TransferEventData) {
+  const orderId = orderIdFromRef(data.reference)
+  if (!orderId) return NextResponse.json({ received: true })
+
+  const supabase = createAdminClient()
+
+  // A reversal means the money was successfully sent but then bounced
+  // back (destination bank rejected it). This is rare but real. Because
+  // we've already advanced the order and probably the runner has already
+  // spent their own money buying the food, this needs admin attention —
+  // we don't auto-rollback the order state.
+  await supabase
+    .from('runner_transfer_queue')
+    .update({ status: 'reversed', failure_reason: data.reason ?? 'Transfer reversed by Paystack' })
+    .eq('paystack_ref', data.reference)
+
+  if (process.env.ADMIN_PHONE) {
+    await sendSMS(process.env.ADMIN_PHONE, `🚨 Runner-funded transfer REVERSED\nOrder ${orderId}\nReason: ${data.reason ?? 'unknown'}\n\nRunner may have already spent money. Handle manually.`)
+  }
+
+  return NextResponse.json({ received: true })
 }

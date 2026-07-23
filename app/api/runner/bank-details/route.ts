@@ -40,7 +40,15 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient()
   const { error } = await admin
     .from('runner_profiles')
-    .update({ bank_name: bankName.trim(), account_number: acct })
+    .update({
+      bank_name: bankName.trim(),
+      account_number: acct,
+      // Bank details changed — invalidate the cached Paystack recipient
+      // so the next runner-funded transfer creates a fresh one against
+      // the new account. Without this we'd send funds to the previous
+      // bank account by accident.
+      paystack_recipient_code: null,
+    })
     .eq('user_id', user.id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

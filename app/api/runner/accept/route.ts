@@ -136,25 +136,50 @@ export async function POST(request: NextRequest) {
   const order = data[0]
   const restaurant = order.restaurant as { name: string } | null
 
-  // ── Queue the runner transfer (runner-funded only) ────────────────
+  // ── Fire the Paystack transfer (runner-funded only) ───────────────
   if (isRunnerFunded) {
     const result = await queueRunnerTransfer(orderId)
     if (!result.ok) {
-      // Rare: order accepted but transfer queue insert failed. Roll
-      // back the acceptance so the order is takeable again.
+      // Transfer didn't fire. Roll back the acceptance so the order is
+      // takeable again by another runner. Common reasons at this stage:
+      //   - Runner has no bank details on file (should be caught by the
+      //     preflight check but defense in depth)
+      //   - Paystack balance too low
+      //   - OTP is enabled on the Paystack account (config error)
+      //   - Bank code lookup failed
       await admin
         .from('orders')
         .update({ runner_id: null, status: 'awaiting_runner', runner_assigned_at: null })
         .eq('id', orderId)
+
+      // Special-case OTP so the admin gets a clearly actionable message.
+      // Everything else surfaces as the raw Paystack reason.
+      const isOtpConfig = result.code === 'OTP_REQUIRED'
       return NextResponse.json({
         success: false,
-        error: `Couldn't queue transfer: ${result.reason}. Try again.`,
-      }, { status: 500 })
+        error: isOtpConfig
+          ? "Paystack OTP is on — admin needs to disable it in Paystack settings."
+          : `Couldn't send funds: ${result.reason}`,
+        code: result.code,
+      }, { status: isOtpConfig ? 500 : 502 })
     }
 
-    // Notify Lymora directly — runner-funded transfers need review.
+    // If Paystack completed synchronously (test mode / instant live
+    // transfer), advance the order past pending_transfer straight to
+    // awaiting_pickup. Otherwise leave it in pending_transfer — the
+    // webhook will advance it when transfer.success arrives.
+    if (result.initialStatus === 'success') {
+      await admin
+        .from('orders')
+        .update({ status: 'runner_funded_awaiting_pickup' })
+        .eq('id', orderId)
+    }
+
+    // Notify Lymora — runner-funded transfers are still worth eyeballing
+    // during pilot, even though they're automated now.
     if (process.env.ADMIN_PHONE && process.env.TERMII_API_KEY) {
-      const msg = `🟠 Runner-funded transfer queued\nOrder: ${order.order_ref}\nRunner: ${profile.full_name}\nAmount: ₦${result.amount.toLocaleString()}\nRef: ${result.transferRef}\n\nReview at /admin/payments`
+      const statusLabel = result.initialStatus === 'success' ? 'sent' : 'pending'
+      const msg = `💸 Runner-funded transfer ${statusLabel}\nOrder: ${order.order_ref}\nRunner: ${profile.full_name}\nAmount: ₦${result.amount.toLocaleString()}\nRef: ${result.transferRef}`
       await fetch('https://api.ng.termii.com/api/sms/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,6 +192,23 @@ export async function POST(request: NextRequest) {
           api_key: process.env.TERMII_API_KEY,
         }),
       }).catch(() => {})
+    }
+
+    // Push runner. Language depends on whether the funds have landed.
+    if (result.initialStatus === 'success') {
+      await sendPushToUser(user.id, {
+        title: '💸 Funds sent — go buy',
+        body: `₦${result.amount.toLocaleString()} for ${order.order_ref} is in your account.`,
+        url: `/order/${orderId}`,
+        tag: 'funds-sent',
+      })
+    } else {
+      await sendPushToUser(user.id, {
+        title: '⏳ Processing your transfer',
+        body: `₦${result.amount.toLocaleString()} for ${order.order_ref} — you'll get a ping when it lands.`,
+        url: `/order/${orderId}`,
+        tag: 'transfer-processing',
+      })
     }
   }
 

@@ -339,7 +339,7 @@ export default function AdminDashboard() {
     { href: '/admin/pre-orders',   icon: '\u26A1',       label: 'Pre-orders',          sub: 'Bulk pickups by peak window',     urgent: false },
     { href: '/admin/payouts',      icon: '\uD83D\uDCB0', label: 'Runner Payouts',      sub: 'Track and mark earnings as paid',  urgent: false },
     { href: '/admin/payments',     icon: '\uD83C\uDFE6', label: 'Restaurant Pay',      sub: 'Float queue \u2014 pay restaurants', urgent: false },
-    { href: '/admin/runner-transfers', icon: '\uD83D\uDCB8', label: 'Runner Transfers',    sub: 'Runner-funded flow \u2014 pay runners so they can buy', urgent: false },
+    { href: '/admin/settlements', icon: '\uD83D\uDCB0', label: 'Runner Settlements', sub: 'Track what runners owe CampusRun', urgent: false },
     { href: '/admin/runner-funded',    icon: '\u2705',       label: 'Runner-funded allowlist', sub: 'Manage who can accept runner-funded orders', urgent: false },
     { href: '/admin/manual-order', icon: '\uD83D\uDCAC', label: 'Manual Order',        sub: 'Build order from WhatsApp message', urgent: false },
     { href: '/home?admin=1',       icon: '\uD83D\uDC41\uFE0F', label: 'View as Customer',    sub: 'See the customer side of the app',  urgent: false },

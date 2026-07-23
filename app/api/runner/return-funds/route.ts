@@ -1,18 +1,17 @@
 // app/api/runner/return-funds/route.ts
 //
-// Runner-initiated return flow. Runs when the runner can't complete
-// the food purchase (restaurant closed, item unavailable, etc). Paystack
-// does not support automatic clawback of an outbound transfer, so the
-// runner must actively pay back the funds themselves via a payment
-// request link. This endpoint creates the payment request and returns
-// the link — the frontend hands it off to the runner to complete.
+// Runner-initiated cancel when they can't complete the order after
+// receiving payment (restaurant closed, item unavailable, etc.).
 //
-// State transitions:
-//   runner_funded_awaiting_pickup → runner_funded_returning
-//   webhook on the RETURN-{orderId} ref → cancelled (+ customer refund)
+// In the direct-pay model, the money is in the runner's own account,
+// not Paystack. So "return funds" means: runner sends the customer's
+// money back to them from their own bank app, then confirms here.
+// The order goes to cancelled; the runner no longer owes the platform
+// (platform_owed_amount is zeroed since no service was delivered).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { sendPushToUser } from '@/lib/send-push'
 
 const RETURN_REASONS = [
   'restaurant_closed',
@@ -39,92 +38,63 @@ export async function POST(request: NextRequest) {
 
   const { data: orderRaw } = await admin
     .from('orders')
-    .select(
-      'id, order_ref, runner_id, payment_model, status, ' +
-      'runner_funded_transfer_amount, customer_id'
-    )
+    .select('id, order_ref, runner_id, payment_model, status, customer_id')
     .eq('id', orderId)
     .single()
-
-  if (!orderRaw) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const order = orderRaw as any
+
+  if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   if (order.runner_id !== user.id) {
     return NextResponse.json({ error: 'Only the assigned runner can return funds' }, { status: 403 })
   }
   if (order.payment_model !== 'runner_funded') {
     return NextResponse.json({ error: 'This order is not runner-funded' }, { status: 400 })
   }
-  // Return is only valid before pickup. Once pickup is marked, the
-  // food is presumed bought and the money has left the runner's hands.
-  if (order.status !== 'runner_funded_awaiting_pickup') {
+  // Return-funds is valid only after the runner has confirmed receiving
+  // payment. Before that there's nothing to return.
+  if (order.status !== 'runner_funded_payment_confirmed') {
     return NextResponse.json({
-      error: order.status === 'runner_funded_pending_transfer'
-        ? "Funds haven't been sent to you yet — nothing to return."
-        : "Can't return funds once pickup is confirmed. Contact Lymora if you need to cancel.",
+      error: order.status === 'runner_funded_awaiting_payment'
+        ? "You haven't confirmed receiving payment yet — just cancel the order instead."
+        : `Can't return funds from ${order.status}. Contact CampusRun if you need help.`,
     }, { status: 409 })
   }
 
-  const amount = order.runner_funded_transfer_amount ?? 0
-  if (amount <= 0) {
-    return NextResponse.json({ error: 'No transfer amount on record' }, { status: 400 })
-  }
-
-  const { data: userRow } = await admin
-    .from('users').select('full_name, email, phone').eq('id', user.id).single()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const u = userRow as any
-
-  const reference = `RETURN-${order.id}`
-
-  // Create a Paystack payment request the runner pays from their side.
-  // Falls back gracefully if Paystack is unreachable — the state stays
-  // as runner_funded_awaiting_pickup so the runner can retry.
-  let authUrl: string | undefined
-  try {
-    const res = await fetch('https://api.paystack.co/transaction/initialize', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: u?.email ?? `${u?.phone ?? user.id}@runner.campusrun.food`,
-        amount: amount * 100, // kobo
-        reference,
-        callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/order/${order.id}`,
-        metadata: {
-          purpose: 'runner_funded_return',
-          order_id: order.id,
-          order_ref: order.order_ref,
-          reason,
-        },
-        channels: ['bank_transfer', 'ussd', 'card'],
-      }),
-    })
-    const data = await res.json()
-    if (data.status && data.data?.authorization_url) {
-      authUrl = data.data.authorization_url
-    } else {
-      return NextResponse.json({
-        error: 'Paystack rejected the return request. Try again or WhatsApp Lymora.',
-      }, { status: 502 })
-    }
-  } catch {
-    return NextResponse.json({
-      error: "Couldn't reach Paystack. Check your internet and try again.",
-    }, { status: 502 })
-  }
-
-  // Mark the order as returning. The webhook completes the transition
-  // once the runner actually pays the link.
   await admin
     .from('orders')
     .update({
-      status: 'runner_funded_returning',
+      status: 'cancelled',
+      cancelled_by: 'runner',
+      cancel_reason: `runner_funded_return:${reason}`,
+      cancelled_at: new Date().toISOString(),
       runner_funded_return_reason: reason,
+      // Runner didn't earn on this order and doesn't owe CampusRun
+      // anything for it — service wasn't delivered.
+      platform_owed_amount: 0,
     })
     .eq('id', order.id)
 
-  return NextResponse.json({ success: true, authorization_url: authUrl, reference })
+  await sendPushToUser(order.customer_id, {
+    title: '↩️ Order cancelled — refund on the way',
+    body: `Your runner couldn't complete ${order.order_ref}. They'll send your money back to your account.`,
+    url: `/orders`,
+    tag: 'order-refunded',
+  })
+
+  if (process.env.ADMIN_PHONE && process.env.TERMII_API_KEY) {
+    const msg = `↩️ Runner-funded cancelled\nOrder: ${order.order_ref}\nReason: ${reason}\nRunner will refund customer directly.`
+    await fetch('https://api.ng.termii.com/api/sms/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: process.env.ADMIN_PHONE,
+        from: process.env.TERMII_SENDER_ID ?? 'CampusRun',
+        sms: msg, type: 'plain', channel: 'generic',
+        api_key: process.env.TERMII_API_KEY,
+      }),
+    }).catch(() => {})
+  }
+
+  return NextResponse.json({ success: true })
 }

@@ -1,31 +1,28 @@
 // app/api/runner/accept/route.ts
 //
-// Runner accepts an order. Two paths depending on the order's
-// payment_model:
+// Runner accepts an order. Two paths:
 //
-//   restaurant_paid (existing) — set runner_assigned; the restaurant
-//   was already paid by the payment webhook. Runner picks up
-//   pre-paid food.
+//   restaurant_paid (existing) — runner_assigned, restaurant already
+//   paid via Paystack subaccount.
 //
-//   runner_funded (new) — set runner_funded_pending_transfer; queue
-//   a transfer to the runner's own bank account. The runner walks
-//   in and pays the restaurant themselves once the transfer lands.
-//   Only allowlisted runners can take these orders. Orders over the
-//   per-order cap are rejected. Existing order_status transitions
-//   are preserved for restaurant_paid — the new states only apply
-//   to the runner-funded flow.
+//   runner_funded (direct pay) — customer sends money directly to the
+//   runner's bank account. Sets order to runner_funded_awaiting_payment
+//   with a 20-minute deadline. Customer sees the runner's bank details;
+//   runner confirms receipt via their bank alert. No Paystack call.
+//   Runner accumulates a debt to CampusRun (delivery+plate fees minus
+//   runner earnings) that they settle up separately.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { sendPushToUser } from '@/lib/send-push'
-import { queueRunnerTransfer } from '../../payments/transfer/runner'
 
-// Config — read from env with a safe fallback. 800000 kobo = ₦8,000.
 const RUNNER_FUNDED_PER_ORDER_CAP_NAIRA = Number(
   process.env.RUNNER_FUNDED_PER_ORDER_CAP_NAIRA ?? '8000'
 )
 
-const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP_NUMBER ?? '2348068404839'
+const PAYMENT_DEADLINE_MINUTES = Number(
+  process.env.RUNNER_FUNDED_PAYMENT_DEADLINE_MIN ?? '20'
+)
 
 export async function POST(request: NextRequest) {
   const { orderId } = await request.json()
@@ -44,12 +41,9 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient()
 
-  // ── Preflight: fetch payment_model + amount to know which branch. ─
-  // We do this BEFORE the assignment so we can reject over-cap orders
-  // without leaving the order in a half-accepted state.
   const { data: preOrderRaw } = await admin
     .from('orders')
-    .select('id, payment_model, food_total, runner_earnings, status, runner_id')
+    .select('id, payment_model, food_total, delivery_fee, runner_earnings, plate_fee, status, runner_id')
     .eq('id', orderId)
     .single()
 
@@ -67,9 +61,7 @@ export async function POST(request: NextRequest) {
 
   const isRunnerFunded = preOrder.payment_model === 'runner_funded'
 
-  // ── Runner-funded eligibility gate ────────────────────────────────
   if (isRunnerFunded) {
-    // Admins can always fulfil (used for personal deliveries during pilot)
     if (!isAdminDelivery) {
       const { data: allowRow } = await admin
         .from('runner_funded_allowlist')
@@ -80,14 +72,18 @@ export async function POST(request: NextRequest) {
       if (!allowRow) {
         return NextResponse.json({
           success: false,
-          error: "This is a runner-funded order — you're not on the allowlist yet. Contact Lymora if you'd like to be added.",
+          error: "This is a runner-funded order — you're not on the allowlist yet. Contact CampusRun if you'd like to be added.",
           code: 'NOT_ALLOWLISTED',
         }, { status: 403 })
       }
     }
 
-    const totalAmount = (preOrder.food_total ?? 0) + (preOrder.runner_earnings ?? 0)
-    if (totalAmount > RUNNER_FUNDED_PER_ORDER_CAP_NAIRA) {
+    const foodTotal = preOrder.food_total ?? 0
+    const deliveryFee = preOrder.delivery_fee ?? 0
+    const plateFee = preOrder.plate_fee ?? 0
+    const customerPayment = foodTotal + deliveryFee + plateFee
+
+    if (customerPayment > RUNNER_FUNDED_PER_ORDER_CAP_NAIRA) {
       return NextResponse.json({
         success: false,
         error: `Order value exceeds the current runner-funded cap of ₦${RUNNER_FUNDED_PER_ORDER_CAP_NAIRA.toLocaleString()}. Skip this one.`,
@@ -95,7 +91,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Runner must have bank details on file to be paid.
     const { data: runnerProfileRaw } = await admin
       .from('runner_profiles')
       .select('bank_name, account_number')
@@ -113,21 +108,37 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── Assignment (atomic — matches original guard pattern) ──────────
-  const targetStatus = isRunnerFunded ? 'runner_funded_pending_transfer' : 'runner_assigned'
+  const targetStatus = isRunnerFunded ? 'runner_funded_awaiting_payment' : 'runner_assigned'
+
+  const updates: Record<string, unknown> = {
+    runner_id: user.id,
+    status: targetStatus,
+    runner_assigned_at: new Date().toISOString(),
+    admin_delivered: isAdminDelivery,
+  }
+
+  if (isRunnerFunded) {
+    const foodTotal = preOrder.food_total ?? 0
+    const deliveryFee = preOrder.delivery_fee ?? 0
+    const plateFee = preOrder.plate_fee ?? 0
+    const runnerEarnings = preOrder.runner_earnings ?? 0
+
+    updates.runner_funded_payment_expected_amount = foodTotal + deliveryFee + plateFee
+    updates.runner_funded_payment_deadline = new Date(
+      Date.now() + PAYMENT_DEADLINE_MINUTES * 60 * 1000
+    ).toISOString()
+    // What the runner owes CampusRun. Set now (not on payment confirm)
+    // so we don't lose it if the confirmation flow bugs out.
+    updates.platform_owed_amount = deliveryFee + plateFee - runnerEarnings
+  }
 
   const { data, error } = await admin
     .from('orders')
-    .update({
-      runner_id: user.id,
-      status: targetStatus,
-      runner_assigned_at: new Date().toISOString(),
-      admin_delivered: isAdminDelivery,
-    })
+    .update(updates)
     .eq('id', orderId)
     .is('runner_id', null)
     .in('status', ['awaiting_runner', 'confirmed'])
-    .select('*, customer:users!customer_id(full_name), restaurant:restaurants(name)')
+    .select('*, customer:users!customer_id(full_name, phone), restaurant:restaurants(name)')
 
   if (error || !data?.length) {
     return NextResponse.json({ success: false, error: 'Order already taken' }, { status: 409 })
@@ -136,95 +147,35 @@ export async function POST(request: NextRequest) {
   const order = data[0]
   const restaurant = order.restaurant as { name: string } | null
 
-  // ── Fire the Paystack transfer (runner-funded only) ───────────────
   if (isRunnerFunded) {
-    const result = await queueRunnerTransfer(orderId)
-    if (!result.ok) {
-      // Transfer didn't fire. Roll back the acceptance so the order is
-      // takeable again by another runner. Common reasons at this stage:
-      //   - Runner has no bank details on file (should be caught by the
-      //     preflight check but defense in depth)
-      //   - Paystack balance too low
-      //   - OTP is enabled on the Paystack account (config error)
-      //   - Bank code lookup failed
-      await admin
-        .from('orders')
-        .update({ runner_id: null, status: 'awaiting_runner', runner_assigned_at: null })
-        .eq('id', orderId)
+    await sendPushToUser(order.customer_id, {
+      title: '💸 Send payment to your runner',
+      body: `Runner ${profile.full_name} is ready. Send ₦${(updates.runner_funded_payment_expected_amount as number).toLocaleString()} to complete the order.`,
+      url: `/order/${orderId}`,
+      tag: 'send-payment',
+    })
 
-      // Special-case OTP so the admin gets a clearly actionable message.
-      // Everything else surfaces as the raw Paystack reason.
-      const isOtpConfig = result.code === 'OTP_REQUIRED'
-      return NextResponse.json({
-        success: false,
-        error: isOtpConfig
-          ? "Paystack OTP is on — admin needs to disable it in Paystack settings."
-          : `Couldn't send funds: ${result.reason}`,
-        code: result.code,
-      }, { status: isOtpConfig ? 500 : 502 })
-    }
-
-    // If Paystack completed synchronously (test mode / instant live
-    // transfer), advance the order past pending_transfer straight to
-    // awaiting_pickup. Otherwise leave it in pending_transfer — the
-    // webhook will advance it when transfer.success arrives.
-    if (result.initialStatus === 'success') {
-      await admin
-        .from('orders')
-        .update({ status: 'runner_funded_awaiting_pickup' })
-        .eq('id', orderId)
-    }
-
-    // Notify Lymora — runner-funded transfers are still worth eyeballing
-    // during pilot, even though they're automated now.
     if (process.env.ADMIN_PHONE && process.env.TERMII_API_KEY) {
-      const statusLabel = result.initialStatus === 'success' ? 'sent' : 'pending'
-      const msg = `💸 Runner-funded transfer ${statusLabel}\nOrder: ${order.order_ref}\nRunner: ${profile.full_name}\nAmount: ₦${result.amount.toLocaleString()}\nRef: ${result.transferRef}`
+      const msg = `💸 Runner-funded accepted\nOrder: ${order.order_ref}\nRunner: ${profile.full_name}\nCustomer to send: ₦${(updates.runner_funded_payment_expected_amount as number).toLocaleString()}\nOwes platform: ₦${updates.platform_owed_amount}`
       await fetch('https://api.ng.termii.com/api/sms/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: process.env.ADMIN_PHONE,
           from: process.env.TERMII_SENDER_ID ?? 'CampusRun',
-          sms: msg,
-          type: 'plain',
-          channel: 'generic',
+          sms: msg, type: 'plain', channel: 'generic',
           api_key: process.env.TERMII_API_KEY,
         }),
       }).catch(() => {})
     }
-
-    // Push runner. Language depends on whether the funds have landed.
-    if (result.initialStatus === 'success') {
-      await sendPushToUser(user.id, {
-        title: '💸 Funds sent — go buy',
-        body: `₦${result.amount.toLocaleString()} for ${order.order_ref} is in your account.`,
-        url: `/order/${orderId}`,
-        tag: 'funds-sent',
-      })
-    } else {
-      await sendPushToUser(user.id, {
-        title: '⏳ Processing your transfer',
-        body: `₦${result.amount.toLocaleString()} for ${order.order_ref} — you'll get a ping when it lands.`,
-        url: `/order/${orderId}`,
-        tag: 'transfer-processing',
-      })
-    }
+  } else {
+    await sendPushToUser(order.customer_id, {
+      title: '🛵 Runner on the way!',
+      body: `${profile.full_name} is heading to ${restaurant?.name} for your order`,
+      url: `/track/${orderId}`,
+      tag: 'runner-assigned',
+    })
   }
 
-  // Push to customer regardless of model — from their POV the language
-  // is the same: a runner is on the way.
-  await sendPushToUser(order.customer_id, {
-    title: '🛵 Runner on the way!',
-    body: `${profile.full_name} is heading to ${restaurant?.name} for your order`,
-    url: `/track/${orderId}`,
-    tag: 'runner-assigned',
-  })
-
-  return NextResponse.json({
-    success: true,
-    order: data[0],
-    isRunnerFunded,
-    adminWhatsApp: isRunnerFunded ? ADMIN_WHATSAPP : undefined,
-  })
+  return NextResponse.json({ success: true, order: data[0], isRunnerFunded })
 }

@@ -4,7 +4,7 @@
 //
 // Managed by hand: an admin picks a runner from the existing runner list
 // and adds them to the allowlist with an optional note ("vouched by
-// Michael, known since May 2026"). Only allowlisted runners can accept
+// personally ("vouched by John, known 6mo"). Only allowlisted runners can accept
 // runner-funded orders (see api/runner/accept — NOT_ALLOWLISTED gate).
 //
 // Explicit removal — no automatic tiering during pilot. Trust is
@@ -238,7 +238,7 @@ export default function RunnerFundedAllowlistPage() {
                 <textarea
                   value={note}
                   onChange={e => setNote(e.target.value)}
-                  placeholder="e.g. vouched by Michael, known since May 2026"
+                  placeholder="e.g. vouched personally, active runner"
                   rows={2}
                   style={{ width: '100%', background: '#0C0B09', border: '1px solid #2A2825', borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 600, color: 'white', fontFamily: 'inherit', resize: 'none', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }}
                 />

@@ -10,8 +10,11 @@ export type OrderStatus =
   | 'delivered'
   | 'cancelled'
   | 'needs_attention'
-  // Runner-funded flow — off-campus orders where the runner receives
-  // food-purchase money in their own account and buys the food themselves.
+  // Runner-funded (direct-pay) flow — customer sends money to runner's
+  // bank account. No Paystack involved.
+  | 'runner_funded_awaiting_payment'   // runner accepted, customer needs to pay
+  | 'runner_funded_payment_confirmed'  // runner confirmed money received; delivery proceeds
+  // Legacy Paystack-transfer flow — kept for schema consistency
   | 'runner_funded_pending_transfer'
   | 'runner_funded_awaiting_pickup'
   | 'runner_funded_returning'

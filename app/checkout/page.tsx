@@ -213,6 +213,12 @@ export default function CheckoutPage() {
     }
 
     clearCart()
+    // Runner-funded orders skip Paystack entirely — customer pays the
+    // runner directly once one accepts. Redirect straight to tracking.
+    if (result.skipPayment) {
+      window.location.href = result.trackUrl ?? `/track/${order.id}`
+      return
+    }
     window.location.href = result.authorization_url
   }
 

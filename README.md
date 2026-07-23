@@ -1,213 +1,162 @@
-# Runner-Funded — Real Paystack Transfers
+# Runner-Funded — Direct-Pay Bundle
 
-## The mea culpa
+## The pivot
 
-You asked for automatic Paystack transfers to runners. I saw the existing `restaurant_transfer_queue` pattern in your codebase and decided a queue-based flow was "actually better for the pilot — every runner-facing transfer gets eyeballed before hitting send." That was me overriding your stated requirement with my own design opinion, and it re-created the exact float-tending workflow you were trying to escape. This bundle fixes that.
+Prior arc: runner-funded orders had Lymora (as admin) sending money to runners so they could go buy food. Every attempted approach — queue-based, Paystack transfers — either kept admin in the loop or ran into account-tier blockers.
 
-## What changes
+This bundle flips the direction. **Customers pay the runner directly.** No Paystack for these orders. The runner keeps the customer's payment, uses it to buy the food, keeps their earnings, and owes CampusRun the delivery + plate fees for that order. Runners settle up periodically via bank transfer to admin.
 
-Runner-funded transfers now fire **automatically via the Paystack Transfers API** on runner accept. No admin approval step. Money goes directly from your Paystack Balance to the runner's registered bank account.
-
-The `runner_transfer_queue` table stays — but as an **audit log**, not an action queue. `/admin/runner-transfers` becomes a read-only monitoring view.
-
-## The new flow
+## The flow
 
 ```
-Runner clicks Accept on a runner-funded order
+Customer places order (runner-funded restaurant)
         ↓
-Get or create Paystack transfer recipient for this runner
-  (creates once, then cached on runner_profiles.paystack_recipient_code)
+Order confirmed immediately (skip Paystack)
         ↓
-POST /transfer  (source: balance, amount: kobo, recipient: RCP_...)
+Broadcast to available allowlisted runners
         ↓
-     ┌──────────────┬─────────────┬────────────┐
-     ↓              ↓             ↓            ↓
-  success        pending         otp         error
-(test mode /   (live mode —   (config     (balance,
- fast live)     wait for      error —      network,
-                webhook)      OTP is on)   etc.)
-     ↓              ↓             ↓            ↓
-  Order →      Order stays   Rollback +   Rollback +
-  awaiting_    pending_      "disable      surface
-  pickup       transfer      OTP" error    error
-     ↓              ↓
-  Push runner    Push runner
-  "funds sent"   "processing"
-                     ↓
-              [webhook fires]
-                     ↓
-               transfer.success
-                     ↓
-                  Order →
-                  awaiting_pickup
-                     ↓
-                  Push runner
-                  "funds sent"
-
-Failure paths:
-  transfer.failed  → Rollback order + push runner + SMS admin
-  transfer.reversed → Alert admin (money bounced back — needs manual handling)
+Runner accepts → status: runner_funded_awaiting_payment
+        ↓
+Customer sees runner's bank details + amount to send
+                       ↓
+Customer sends payment via their own bank app
+        ↓
+Runner's bank alert lands
+        ↓
+Runner taps "I received the payment"
+        ↓
+Order → runner_funded_payment_confirmed → runner_assigned flow
+        ↓
+Runner buys food, delivers, marks delivered
+        ↓
+Runner now owes CampusRun (delivery_fee + plate_fee - runner_earnings)
+        ↓
+[Later] Runner sends accumulated debt to admin's bank
+        ↓
+Admin marks settled in /admin/settlements
 ```
 
-## What this bundle contains
+## Money math per order
 
-**8 files:**
+- Customer sends runner: `food_total + delivery_fee + plate_fee`
+- Runner spends at restaurant: `food_total`
+- Runner keeps: `runner_earnings`
+- Runner owes CampusRun: `delivery_fee + plate_fee - runner_earnings`
+- No processing_fee (no Paystack involved)
 
-| Path | Change | Purpose |
-|---|---|---|
-| `sql/002_paystack_transfers.sql` | **NEW MIGRATION** | Adds `paystack_recipient_code` to runner_profiles, `paystack_transfer_code` + `failure_reason` to runner_transfer_queue, extends status CHECK with `success`/`reversed` |
-| `lib/paystack/transfers.ts` | **NEW** | Bank code lookup + get-or-create recipient + initiate transfer, with proper OTP + error handling |
-| `app/api/payments/transfer/runner.ts` | **REPLACES** | Now fires the real Paystack transfer instead of just queueing |
-| `app/api/runner/accept/route.ts` | **MODIFIED** | Reacts to Paystack's initial status — advances order to awaiting_pickup on immediate success, sends "processing" push when pending |
-| `app/api/payments/webhook/route.ts` | **MODIFIED** | Handles `transfer.success` / `transfer.failed` / `transfer.reversed` events. Advances order, rolls back on failure, alerts admin on reversal |
-| `app/api/runner/bank-details/route.ts` | **MODIFIED** | Clears cached `paystack_recipient_code` when runner updates bank |
-| `app/api/admin/runner-transfers/route.ts` | **REPLACES** | Removes the manual mark-paid POST. GET now returns audit-view fields (success/failed/reversed counts, transfer_code, failure_reason) |
-| `app/admin/runner-transfers/page.tsx` | **REPLACES** | Redesigned as read-only audit view. Status pills (IN FLIGHT / SUCCESS / FAILED / REVERSED), failure reasons inline, copyable transfer codes for Paystack reconciliation |
+Stamped in `orders.platform_owed_amount` at accept time; cleared to 0 on cancel or set to 0 automatically on refund.
+
+## Failure paths
+
+- **Customer never pays** → cron watchdog auto-cancels after 20 min (configurable via `RUNNER_FUNDED_PAYMENT_DEADLINE_MIN`). Runner is freed to take other orders. Both parties get push.
+- **Restaurant closed / can't buy** → runner opens "Cancel & refund" sheet, sends money back to customer from their bank app, taps "I've sent the refund". Order cancelled. Platform debt zeroed. Customer gets push.
+- **Paystack Balance / transfer issues** → not applicable. Nothing routes through Paystack for these orders.
+
+## What's in the bundle
+
+**11 files, ~zero lingering Lymora/Michael references anywhere in the codebase:**
+
+| Path | Change |
+|---|---|
+| `sql/003_direct_payment.sql` | **NEW MIGRATION.** New order statuses (`awaiting_payment`, `payment_confirmed`), payment-tracking columns on orders, `platform_owed_amount` + `platform_settled_at`, `platform_settlements` table |
+| `types/index.ts` | New OrderStatus values |
+| `app/api/payments/init/route.ts` | Detects runner-funded orders and short-circuits Paystack entirely; broadcasts to runners directly |
+| `app/api/payments/webhook/route.ts` | Simplified — only handles restaurant_paid `charge.success` |
+| `app/api/runner/accept/route.ts` | No Paystack call. Sets `runner_funded_awaiting_payment` + 20-min deadline + stamps `platform_owed_amount` |
+| `app/api/runner/confirm-payment/route.ts` | **NEW.** Runner taps "received", advances to `payment_confirmed` |
+| `app/api/runner/return-funds/route.ts` | Runner sends refund from own bank app, then confirms → order cancelled, platform debt zeroed |
+| `app/api/admin/settlements/route.ts` | **NEW.** GET outstanding debt by runner; POST records a settlement |
+| `app/api/cron/watchdog/route.ts` | New job: auto-cancel `runner_funded_awaiting_payment` orders past their deadline |
+| `app/checkout/page.tsx` | Handles `skipPayment` response — no Paystack redirect for runner-funded |
+| `app/order/[id]/page.tsx` | Runner order view. Direct-pay card with "I received the payment" CTA, platform-owed breakdown, "Message admin" (no more "Michael") |
+| `app/track/[id]/page.tsx` | Customer track view. New `SendPaymentCard` — runner's bank name + copyable account number + copyable amount + countdown to deadline |
+| `app/admin/settlements/page.tsx` | **NEW.** Settlements management: outstanding debt per runner + history tab |
+| `app/admin/dashboard/page.tsx` | Nav: swap Runner Transfers → Runner Settlements |
+| `app/admin/runner-funded/page.tsx` | Cleaned up example note text |
+
+## Env vars
+
+Only one new one, and it's optional:
+
+```bash
+# Minutes the customer has to send payment before the order auto-cancels
+# and the runner is freed. Default: 20.
+RUNNER_FUNDED_PAYMENT_DEADLINE_MIN=20
+```
+
+Plus a `NEXT_PUBLIC_ADMIN_WHATSAPP` if you want the runner's "Message admin" button to point somewhere specific — otherwise it falls back to the hardcoded number the earlier bundles used.
 
 ## Install
 
-### 1. Run the migration
+1. Run `sql/003_direct_payment.sql` in Supabase SQL editor. Idempotent.
+2. Reload the schema cache: `NOTIFY pgrst, 'reload schema';`
+3. Overlay all 15 files. Restart. `npx tsc --noEmit` clean.
+4. No Paystack config changes needed. No account tier upgrade needed. Runner-funded orders bypass Paystack entirely.
 
-```bash
-psql "$DATABASE_URL" -f sql/002_paystack_transfers.sql
-```
+## What each side sees
 
-Or paste into the Supabase SQL editor. Idempotent.
+### Customer, after placing a runner-funded order
 
-### 2. Reload the Supabase schema cache
+`/track/[id]` shows:
+- Order details as usual
+- A prominent "**Send payment to your runner**" card featuring:
+  - The runner's name and photo initials
+  - The exact amount (₦ figure, big, with a Copy button)
+  - The runner's bank name and account number (big monospace, copy button)
+  - The account name
+  - A live countdown: "Send within 18:42"
+  - A "Call [runner name]" shortcut
 
-```sql
-NOTIFY pgrst, 'reload schema';
-```
+### Runner, after accepting
 
-New columns need to be visible to PostgREST.
+`/order/[id]` shows:
+- The direct-pay card:
+  - "Waiting for payment · Check your bank alerts" while awaiting
+  - Full amount breakdown (customer sending / spent on food / your earnings / you owe CampusRun)
+  - A big green "**✓ I received the payment**" button
+  - Countdown to the auto-cancel deadline
+  - "Call customer" + "Message admin" shortcuts
+- After confirming: card flips green, shows "Head to [restaurant]"; normal delivery flow takes over
 
-### 3. Disable Paystack OTP for transfers
+### Admin, checking on things
 
-**Critical.** Without this, transfers require someone to manually approve each one via SMS — which defeats the whole point.
-
-- Log into your Paystack Dashboard
-- Go to **Settings → Preferences**
-- Find **"Confirm transfers before sending"**
-- **Uncheck it**
-- Save
-
-If you skip this step, every transfer will come back with `status: 'otp'` and the accept route will surface: *"Paystack OTP is on — admin needs to disable it in Paystack settings."* You'll know immediately.
-
-### 4. Configure the webhook URL
-
-If your webhook is already set up for `charge.success` events, it's already receiving `transfer.*` events too — Paystack sends everything to the same URL. No new configuration needed.
-
-Confirm at **Paystack Dashboard → Settings → API Keys & Webhooks**. Your webhook URL should be `https://your-domain.com/api/payments/webhook`.
-
-### 5. Overlay the code
-
-Drop all 8 files into your repo. Restart. `npx tsc --noEmit` clean.
-
-### 6. Fund the Paystack Balance
-
-Runner-funded transfers pull from your Paystack Balance, not from a linked bank. Make sure there's enough there to cover expected daily volume + a buffer. Top-up via the Paystack Dashboard.
-
-Suggested starting float: `per_order_cap × expected_orders_per_day × 2`. For pilot at ₦8,000 cap and 10 orders/day → ₦160,000 buffer.
+`/admin/settlements` shows:
+- Total outstanding across all runners at the top
+- Per-runner cards with debt amount, expandable to show all outstanding orders
+- Multi-select checkboxes, bank ref input, "Mark settled" button
+- History tab of past settlements
 
 ## Testing
 
-### Test mode
+1. Flag one restaurant as `requires_runner_funded` (already done for your restaurants).
+2. As customer, place an order to that restaurant.
+3. Check DB — order should have `payment_model = 'runner_funded'`, `status = 'confirmed'`, then move to `awaiting_runner` after broadcast.
+4. Should NOT see any Paystack redirect. Instead: land on `/track/[orderId]` with runner-finding UI.
+5. As allowlisted runner (with bank details on file), accept from `/dashboard`.
+6. Runner: order goes to `runner_funded_awaiting_payment`, direct-pay card appears with "waiting for payment" state.
+7. Customer: track page shows the runner's bank details + amount + countdown.
+8. Manually send yourself money via your bank (or skip this step in test).
+9. Runner: tap "I received the payment". Card flips green. Order → `runner_funded_payment_confirmed`.
+10. Runner: mark picked up, mark delivered normally.
+11. Admin: `/admin/settlements` shows the runner as owing `delivery_fee + plate_fee - runner_earnings`.
+12. Runner sends admin the accumulated debt via bank transfer.
+13. Admin: expand runner's card, select the settled orders, paste bank ref, tap "Mark settled".
+14. Debt clears. Order is now marked `platform_settled_at`.
 
-Paystack test transfers **always succeed instantly**. Response comes back with `status: 'success'` and the webhook fires immediately. Your test flow:
+## Rollback
 
-1. Runner accepts a runner-funded order.
-2. Paystack test transfer fires.
-3. Response is `success`.
-4. Order advances directly to `runner_funded_awaiting_pickup`.
-5. Runner sees "funds sent — go buy" push.
-6. No actual money moves (test mode).
-
-Verify by checking the queue row:
-
-```sql
-SELECT status, paystack_transfer_code, paystack_ref
-FROM runner_transfer_queue
-ORDER BY created_at DESC
-LIMIT 1;
-```
-
-You should see `status = 'success'` and a valid `TRF_...` code.
-
-### Live mode
-
-Live transfers may return `status: 'pending'` initially and complete via webhook in seconds to minutes. Your flow:
-
-1. Runner accepts.
-2. Response is `pending`.
-3. Order stays in `runner_funded_pending_transfer`, runner sees "processing your transfer" push.
-4. Webhook `transfer.success` arrives → order advances to `runner_funded_awaiting_pickup`, runner sees "funds sent — go buy" push.
-5. Money is actually in the runner's bank account.
-
-## Error handling
-
-Every failure mode has an intentional path:
-
-| Failure | Where it fails | User-facing behaviour |
-|---|---|---|
-| Runner has no bank details | Preflight in accept route | Blocked with "add bank in Profile" |
-| Runner has invalid bank details | `getOrCreateRecipient` fails | Bailed with Paystack's error message |
-| Paystack balance too low | `initiateTransfer` returns 400 | Order rolled back, runner sees error, admin gets SMS |
-| OTP is enabled | `initiateTransfer` returns `status: 'otp'` | Specific error asking to disable OTP |
-| Bank code not found | `getBankCode` returns null | Error: "Couldn't find Paystack bank code for X" |
-| Transfer initiated but later fails | `transfer.failed` webhook | Order rolled back, runner + admin notified |
-| Transfer bounces after success | `transfer.reversed` webhook | Admin SMS'd — money is back in balance but runner may have already spent |
-
-## What the `transfer_reversed` case actually means
-
-If a transfer completes successfully but the destination bank rejects it later (wrong account number, closed account, etc.), Paystack sends `transfer.reversed`. The money returns to your Paystack Balance.
-
-By the time this fires, the runner has probably already gone to the restaurant and spent their own money on the food. So we **don't automatically roll back the order** — we just SMS you so you can handle it out-of-band. Options in that case: manually re-fire the transfer to a different account, or reimburse the runner directly.
-
-Rare in practice (Paystack's account resolution API catches most bad account numbers at recipient creation), but worth knowing exists.
-
-## What the audit view now shows
-
-`/admin/runner-transfers` per runner:
-
-- **In flight**: transfers where the webhook hasn't confirmed yet
-- **Sent**: successfully completed transfers
-- **Failed**: transfers Paystack rejected or reversed
-
-Runners with any failures get a red-bordered card so you can spot them at a glance. Expanding a runner shows the transfer list with status pills, timestamps, amounts, and copyable Paystack transfer codes for reconciliation against Paystack's Dashboard.
-
-## Verify end-to-end
-
-After overlaying and running the migration:
+Everything's additive on the DB. If you need to switch back to restaurant_paid for a specific restaurant:
 
 ```sql
--- Check the recipient column exists on runner_profiles
-SELECT column_name FROM information_schema.columns
-WHERE table_name = 'runner_profiles' AND column_name = 'paystack_recipient_code';
-
--- Check the queue has the new columns
-SELECT column_name FROM information_schema.columns
-WHERE table_name = 'runner_transfer_queue'
-  AND column_name IN ('paystack_transfer_code', 'failure_reason');
-
--- Check the status CHECK includes success/reversed
-SELECT pg_get_constraintdef(c.oid)
-FROM pg_constraint c
-WHERE c.conname = 'runner_transfer_queue_status_check';
+UPDATE restaurants SET requires_runner_funded = FALSE WHERE id = '...';
 ```
 
-Then have your allowlisted runner accept a runner-funded order. Watch:
-- Order state advances to `runner_funded_awaiting_pickup` (test mode) or stays `runner_funded_pending_transfer` (live mode)
-- Queue row appears with `status = 'success'` or `sent`, and `paystack_transfer_code` populated
-- Runner sees the "funds sent" or "processing" push
-- `/admin/runner-transfers` shows the transfer with the right status pill
+New orders to that restaurant will route through the existing Paystack flow again. In-flight runner-funded orders will complete via the new flow.
 
-If any of those don't happen, run:
+If you need to disable the direct-pay flow entirely:
 
 ```sql
-SELECT status, paystack_ref, paystack_transfer_code, failure_reason
-FROM runner_transfer_queue
-ORDER BY created_at DESC LIMIT 5;
+UPDATE restaurants SET requires_runner_funded = FALSE;
 ```
 
-And send me what you see. The `failure_reason` column now captures Paystack's error text directly, so debugging becomes: "read the failure_reason and act on it."
+The code paths for runner-funded stay dormant. Nothing else changes.

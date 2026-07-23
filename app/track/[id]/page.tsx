@@ -20,6 +20,8 @@ function statusToStep(status: string): number {
     case 'confirmed':        return 1
     case 'awaiting_runner':  return 1
     case 'runner_assigned':  return 2
+    case 'runner_funded_awaiting_payment':  return 2
+    case 'runner_funded_payment_confirmed': return 2
     case 'preparing':        return 2
     case 'picked_up':        return 2
     case 'delivered':        return 3
@@ -32,6 +34,8 @@ function statusLabel(s: string) {
   if (s === 'cancelled')                             return 'Cancelled'
   if (s === 'needs_attention')                       return 'Finding runner'
   if (s === 'awaiting_runner')                       return 'Finding a runner…'
+  if (s === 'runner_funded_awaiting_payment')        return 'Send payment to your runner'
+  if (s === 'runner_funded_payment_confirmed')       return 'Runner is on it'
   if (s === 'runner_assigned' || s === 'preparing') return 'Runner is on it'
   if (s === 'picked_up')                             return 'Out for delivery'
   return 'Order placed'
@@ -108,7 +112,159 @@ function DeliveryCodeCard({ code }: { code: string }) {
   )
 }
 
-/* ── RatingPrompt ───────────────────────────────────────── */
+/* ── SendPaymentCard (customer, runner-funded direct-pay) ────────── */
+function SendPaymentCard({ order, runner }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  order: any
+  runner: { full_name: string; phone: string }
+}) {
+  const [copied, setCopied] = useState<'account' | 'amount' | null>(null)
+  const [countdown, setCountdown] = useState('')
+
+  // Bank details are on runner_profile, joined from runner_profiles
+  const profile = order.runner_profile
+  const bankProfile = Array.isArray(profile) ? profile[0] : profile
+  const bankName = bankProfile?.bank_name ?? '—'
+  const accountNumber = bankProfile?.account_number ?? '—'
+  const amount = order.runner_funded_payment_expected_amount ?? 0
+  const deadline = order.runner_funded_payment_deadline
+
+  useEffect(() => {
+    if (!deadline) return
+    const tick = () => {
+      const remaining = new Date(deadline).getTime() - Date.now()
+      if (remaining <= 0) { setCountdown('expired'); return }
+      const mins = Math.floor(remaining / 60000)
+      const secs = Math.floor((remaining % 60000) / 1000)
+      setCountdown(`${mins}:${secs.toString().padStart(2, '0')}`)
+    }
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [deadline])
+
+  function copy(text: string, which: 'account' | 'amount') {
+    navigator.clipboard.writeText(text).catch(() => {})
+    setCopied(which)
+    setTimeout(() => setCopied(null), 1500)
+  }
+
+  const isExpired = countdown === 'expired'
+
+  return (
+    <div style={{
+      background: isExpired
+        ? 'linear-gradient(135deg, #2A0A0A, #331010)'
+        : 'linear-gradient(135deg, #2A1F00, #3D2E00)',
+      border: `1px solid ${isExpired ? 'rgba(255,59,48,0.35)' : 'rgba(255,184,0,0.35)'}`,
+      borderRadius: 16,
+      padding: 16,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8,
+          background: 'rgba(255,184,0,0.15)',
+          border: '1px solid rgba(255,184,0,0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 16,
+        }}>💸</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="label-cap" style={{ color: '#FFB800', margin: 0, fontSize: 10 }}>
+            Send payment to your runner
+          </p>
+          <p style={{ color: 'white', fontWeight: 800, fontSize: 14, margin: '2px 0 0' }}>
+            {runner.full_name} is waiting
+          </p>
+        </div>
+      </div>
+
+      {/* Amount — the primary action */}
+      <div style={{ background: 'rgba(0,0,0,0.35)', borderRadius: 12, padding: 14, marginBottom: 10 }}>
+        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+          Amount to send
+        </p>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+          <span className="font-display" style={{ fontSize: 32, color: 'white', fontWeight: 900, lineHeight: 1 }}>
+            ₦{amount.toLocaleString()}
+          </span>
+          <button
+            onClick={() => copy(String(amount), 'amount')}
+            className="press"
+            style={{ marginLeft: 'auto', background: 'rgba(255,184,0,0.15)', color: '#FFB800', border: '1px solid rgba(255,184,0,0.3)', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', minHeight: 32 }}
+          >
+            {copied === 'amount' ? '✓ Copied' : 'Copy'}
+          </button>
+        </div>
+      </div>
+
+      {/* Bank details */}
+      <div style={{ background: 'rgba(0,0,0,0.35)', borderRadius: 12, padding: 14, marginBottom: 10 }}>
+        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+          Send to
+        </p>
+        <p style={{ color: 'white', fontWeight: 800, fontSize: 14, margin: 0 }}>{bankName}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <span style={{ flex: 1, fontFamily: 'monospace', fontSize: 20, color: 'white', fontWeight: 800, letterSpacing: '0.08em' }}>
+            {accountNumber}
+          </span>
+          <button
+            onClick={() => copy(accountNumber, 'account')}
+            className="press"
+            style={{ background: 'rgba(255,184,0,0.15)', color: '#FFB800', border: '1px solid rgba(255,184,0,0.3)', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', minHeight: 32 }}
+          >
+            {copied === 'account' ? '✓ Copied' : 'Copy'}
+          </button>
+        </div>
+        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 700, margin: '8px 0 0' }}>
+          Account name: <span style={{ color: 'white' }}>{runner.full_name}</span>
+        </p>
+      </div>
+
+      {/* Countdown */}
+      {countdown && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: 10, borderRadius: 10,
+          background: isExpired ? 'rgba(255,59,48,0.15)' : 'rgba(255,184,0,0.08)',
+          border: `1px solid ${isExpired ? 'rgba(255,59,48,0.35)' : 'rgba(255,184,0,0.25)'}`,
+          marginBottom: 10,
+        }}>
+          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: 700 }}>
+            {isExpired ? 'Payment window expired' : 'Send within'}
+          </span>
+          <span className="font-display" style={{ color: isExpired ? '#FF3B30' : '#FFB800', fontSize: 18, fontWeight: 900, fontFamily: 'monospace' }}>
+            {countdown === 'expired' ? '—' : countdown}
+          </span>
+        </div>
+      )}
+
+      {/* Instruction */}
+      <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+        Send exactly ₦{amount.toLocaleString()} to the account above from any bank app. Your runner will confirm on their end once it lands — usually 1–2 minutes.
+      </p>
+
+      {/* Call runner */}
+      {runner.phone && (
+        <a
+          href={`tel:${runner.phone}`}
+          className="press"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            marginTop: 12,
+            background: 'rgba(29,185,84,0.12)', color: '#1DB954',
+            fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12,
+            border: '1px solid rgba(29,185,84,0.28)',
+            textDecoration: 'none', minHeight: 44,
+          }}
+        >
+          📞 Call {runner.full_name}
+        </a>
+      )}
+    </div>
+  )
+}
+
+
 function RatingPrompt({ orderId, onDone }: { orderId: string; onDone: () => void }) {
   const [stars, setStars] = useState(0)
   const [hovered, setHovered] = useState(0)
@@ -182,7 +338,7 @@ export default function TrackingPage() {
     const fetchOrder = async () => {
       const { data } = await supabase
         .from('orders')
-        .select('*, is_pre_order, runner_assigned_at, picked_up_at, restaurant:restaurants(name, avg_prep_time), runner:users!runner_id(full_name, phone)')
+        .select('*, is_pre_order, runner_assigned_at, picked_up_at, restaurant:restaurants(name, avg_prep_time), runner:users!runner_id(full_name, phone), runner_profile:runner_profiles!runner_id(bank_name, account_number)')
         .eq('id', id)
         .single()
 
@@ -390,6 +546,17 @@ export default function TrackingPage() {
       <div className="scroll-hide" style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {isDelivered && showRating && (
           <RatingPrompt orderId={id} onDone={() => { setShowRating(false); setAlreadyRated(true) }} />
+        )}
+
+        {/* ═════════════════════════════════════════════════════════
+            SEND PAYMENT CARD (customer, runner-funded direct-pay flow)
+            Shown only while the runner is waiting for the customer's
+            transfer. Displays runner's bank details prominently with
+            copy buttons, exact amount, and countdown to deadline.
+            ═════════════════════════════════════════════════════════ */}
+        {order.status === 'runner_funded_awaiting_payment' && runner && (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          <SendPaymentCard order={order as any} runner={runner} />
         )}
 
         {deliveryCode && !isDelivered && !isCancelled && ['runner_assigned', 'picked_up', 'preparing'].includes(order.status) && (

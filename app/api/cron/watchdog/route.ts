@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     preorder_pushes_sent: 0,
     featured_push_sent: 0,
     hours_synced: 0,
+    rf_payment_timeouts: 0,
   }
 
   /* ────────────────────────────────────────────────────────
@@ -319,6 +320,50 @@ export async function GET(request: NextRequest) {
   }
 
   console.log('[watchdog] Done', results)
+  /* ───────────────────────────────────────────────────────────
+     JOB — Runner-funded payment timeout
+     Orders sitting in runner_funded_awaiting_payment past their
+     deadline (customer never sent the money) get auto-cancelled
+     and the runner is freed. Runner earnings and platform debt
+     are cleared since no service was delivered.
+  ──────────────────────────────────────────────────────── */
+  {
+    const { data: expired } = await supabase
+      .from('orders')
+      .select('id, order_ref, customer_id, runner_id')
+      .eq('status', 'runner_funded_awaiting_payment')
+      .lt('runner_funded_payment_deadline', now.toISOString())
+
+    if (expired?.length) {
+      for (const o of expired) {
+        await supabase.from('orders').update({
+          status: 'cancelled',
+          cancelled_by: 'system',
+          cancel_reason: 'Customer did not send payment before deadline',
+          cancelled_at: now.toISOString(),
+          platform_owed_amount: 0,
+        }).eq('id', o.id).eq('status', 'runner_funded_awaiting_payment')
+
+        results.rf_payment_timeouts++
+
+        await sendPushToUser(o.customer_id, {
+          title: '⏱️ Order cancelled',
+          body: `${o.order_ref} was cancelled because payment wasn't received in time. Try again when you're ready.`,
+          url: `/orders`,
+          tag: 'order-timeout',
+        })
+        if (o.runner_id) {
+          await sendPushToUser(o.runner_id, {
+            title: '⏱️ Order timed out',
+            body: `${o.order_ref} auto-cancelled — customer never paid. You're free for the next one.`,
+            url: `/dashboard`,
+            tag: 'order-freed',
+          })
+        }
+      }
+    }
+  }
+
   return NextResponse.json({ ok: true, ...results })
 }
 

@@ -107,40 +107,29 @@ export default function CheckoutPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login?next=/checkout'); return }
 
-    // For pantry-only orders, use the pantry restaurant's ID for the insert
+    // For pantry-only orders, use the pantry restaurant's ID for the insert.
+    // Also determine payment_model from the effective restaurant.
     let effectiveRestaurantId = restaurantId
-    // Track whether this order routes through the runner-funded flow:
-    // set true if the effective restaurant (either the selected one, OR
-    // the pantry) has requires_runner_funded=true. If admin has flagged
-    // the pantry itself, they want it too — no special-casing.
     let paymentModel: 'restaurant_paid' | 'runner_funded' = 'restaurant_paid'
     if (!effectiveRestaurantId) {
-      // Pantry-only path: pull the pantry restaurant AND its runner-funded flag
       const { data: pantryRest } = await supabase
-        .from('restaurants')
-        .select('id, requires_runner_funded')
-        .eq('is_pantry', true)
-        .limit(1)
-        .maybeSingle()
+        .from('restaurants').select('id, requires_runner_funded').eq('is_pantry', true).limit(1).maybeSingle()
       if (!pantryRest) {
         setError('Pantry is temporarily unavailable. Please try again later.')
         setLoading(false); return
       }
       effectiveRestaurantId = pantryRest.id
-      if (pantryRest.requires_runner_funded) paymentModel = 'runner_funded'
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((pantryRest as any).requires_runner_funded) paymentModel = 'runner_funded'
     } else {
-      // Re-check the food restaurant is still open + fetch the runner-
-      // funded flag in the same round-trip.
       const { data: restaurant } = await supabase
-        .from('restaurants')
-        .select('is_open, requires_runner_funded')
-        .eq('id', restaurantId)
-        .single()
+        .from('restaurants').select('is_open, requires_runner_funded').eq('id', restaurantId).single()
       if (!restaurant?.is_open) {
         setError('This restaurant just closed. Please choose another restaurant.')
         setRestaurantOpen(false); setLoading(false); return
       }
-      if (restaurant.requires_runner_funded) paymentModel = 'runner_funded'
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((restaurant as any).requires_runner_funded) paymentModel = 'runner_funded'
     }
 
     const { data: profile } = await supabase
@@ -162,7 +151,7 @@ export default function CheckoutPage() {
         broadcast_count: 0,
         order_notes:   orderNotes.trim() || null,
         scheduled_for: scheduleEnabled && scheduledFor ? scheduledFor : null,
-        payment_model: paymentModel,
+        payment_model:   paymentModel,
       })
       .select()
       .single()
@@ -213,8 +202,7 @@ export default function CheckoutPage() {
     }
 
     clearCart()
-    // Runner-funded orders skip Paystack entirely — customer pays the
-    // runner directly once one accepts. Redirect straight to tracking.
+    // Runner-funded orders bypass Paystack entirely — jump to tracking.
     if (result.skipPayment) {
       window.location.href = result.trackUrl ?? `/track/${order.id}`
       return

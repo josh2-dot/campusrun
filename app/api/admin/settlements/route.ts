@@ -1,10 +1,7 @@
 // app/api/admin/settlements/route.ts
 //
-// GET  — list runners with outstanding platform debt (delivery + plate
-//        fees minus runner earnings, per delivered runner-funded order),
-//        grouped by runner. Also returns settlement history.
-// POST — record a settlement: mark selected orders as settled, insert
-//        an audit row in platform_settlements.
+// GET  — list runners with outstanding platform debt + settlement history
+// POST — record a settlement (runner sent admin the accumulated debt)
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
@@ -13,7 +10,7 @@ async function requireAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false as const, status: 401 }
-  const { data } = await supabase.from('users').select('role').eq('id', user.id).single()
+  const { data } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if ((data as any)?.role !== 'admin') return { ok: false as const, status: 403 }
   return { ok: true as const, userId: user.id }
@@ -25,30 +22,34 @@ export async function GET() {
 
   const admin = createAdminClient()
 
-  // Outstanding: any delivered runner-funded order where the runner
-  // owes CampusRun money and hasn't settled yet.
-  const { data: outstandingRaw } = await admin
+  const { data: outstandingRaw, error: outErr } = await admin
     .from('orders')
-    .select('id, order_ref, runner_id, platform_owed_amount, delivered_at, runner_funded_payment_confirmed_at')
+    .select('id, order_ref, runner_id, platform_owed_amount, delivered_at')
     .eq('payment_model', 'runner_funded')
     .eq('status', 'delivered')
     .gt('platform_owed_amount', 0)
     .is('platform_settled_at', null)
     .order('delivered_at', { ascending: false })
     .limit(500)
+
+  if (outErr) {
+    return NextResponse.json({ error: `Outstanding query failed: ${outErr.message}` }, { status: 500 })
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const outstanding = (outstandingRaw ?? []) as any[]
 
-  // Recent settlements (last 30) for history view
-  const { data: recentRaw } = await admin
+  const { data: recentRaw, error: histErr } = await admin
     .from('platform_settlements')
     .select('id, runner_id, amount, order_count, bank_reference, received_at, note')
     .order('received_at', { ascending: false })
     .limit(30)
+
+  if (histErr) {
+    return NextResponse.json({ error: `Settlement history failed: ${histErr.message}` }, { status: 500 })
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recentSettlements = (recentRaw ?? []) as any[]
 
-  // Fetch runner names for both lists
   const runnerIds = new Set<string>()
   outstanding.forEach(o => runnerIds.add(o.runner_id))
   recentSettlements.forEach(s => runnerIds.add(s.runner_id))
@@ -60,7 +61,6 @@ export async function GET() {
   const users = (usersData ?? []) as any[]
   const userById = new Map(users.map(u => [u.id, u]))
 
-  // Group outstanding by runner
   const byRunner = new Map<string, {
     runner_id: string
     runner_name: string
@@ -120,12 +120,14 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Load orders to compute the total. Guard: must all belong to the
-  // runner, all runner-funded, all delivered, and all still unsettled.
-  const { data: ordersRaw } = await admin
+  const { data: ordersRaw, error: ordErr } = await admin
     .from('orders')
     .select('id, runner_id, platform_owed_amount, payment_model, status, platform_settled_at')
     .in('id', orderIds)
+
+  if (ordErr) {
+    return NextResponse.json({ error: `Order lookup failed: ${ordErr.message}` }, { status: 500 })
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orders = (ordersRaw ?? []) as any[]
 
@@ -138,13 +140,12 @@ export async function POST(request: NextRequest) {
   )
   if (invalid.length > 0) {
     return NextResponse.json({
-      error: `${invalid.length} order(s) can't be settled — already settled, wrong runner, or not delivered yet.`,
+      error: `${invalid.length} order(s) can't be settled — already settled, wrong runner, or not delivered.`,
     }, { status: 400 })
   }
 
   const totalAmount = orders.reduce((s, o) => s + (o.platform_owed_amount ?? 0), 0)
 
-  // Insert settlement row
   const { data: settlementRow, error: settErr } = await admin
     .from('platform_settlements')
     .insert({
@@ -159,21 +160,22 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (settErr || !settlementRow) {
-    return NextResponse.json({ error: settErr?.message ?? 'Failed to record settlement' }, { status: 500 })
+    return NextResponse.json({ error: `Settlement insert failed: ${settErr?.message}` }, { status: 500 })
   }
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const settlementId = (settlementRow as any).id
 
-  // Stamp orders
-  const now = new Date().toISOString()
-  await admin
+  const { error: stampErr } = await admin
     .from('orders')
     .update({
-      platform_settled_at: now,
+      platform_settled_at: new Date().toISOString(),
       platform_settlement_id: settlementId,
     })
     .in('id', orderIds)
+
+  if (stampErr) {
+    return NextResponse.json({ error: `Order stamp failed: ${stampErr.message}` }, { status: 500 })
+  }
 
   return NextResponse.json({
     success: true,

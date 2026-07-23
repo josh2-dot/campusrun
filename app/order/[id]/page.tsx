@@ -88,123 +88,48 @@ function CancelSheet({ onConfirm, onClose, confirming }: { onConfirm: (reason: s
   )
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// ReturnFundsSheet — shown when a runner needs to return unspent funds
-// on a runner-funded order (restaurant closed, item unavailable, etc.)
-// Runner picks a reason, hits the CTA, gets forwarded to a Paystack
-// payment link they pay from their own account to send the money back.
-// ═════════════════════════════════════════════════════════════════════
-function ReturnFundsSheet({ orderId, open, onClose, onSuccess }: {
-  orderId: string; open: boolean; onClose: () => void; onSuccess: () => void
+/* ── RefundSheet (runner-funded direct-pay) ─────────────── */
+function RefundSheet({ onConfirm, onClose, refunding }: {
+  onConfirm: (reason: string) => void; onClose: () => void; refunding: boolean
 }) {
   const [reason, setReason] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const REASONS: { key: string; emoji: string; label: string }[] = [
+  const REASONS = [
     { key: 'restaurant_closed',  emoji: '🚫', label: 'Restaurant is closed' },
     { key: 'item_unavailable',   emoji: '❌', label: "Item isn't available" },
     { key: 'restaurant_refused', emoji: '🙅', label: 'Restaurant refused to sell' },
     { key: 'other',              emoji: '⚠️', label: 'Something else' },
   ]
 
-  async function submit() {
-    if (!reason) return
-    setSubmitting(true); setError(null)
-    const res = await fetch('/api/runner/return-funds', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId, reason }),
-    })
-    const data = await res.json()
-    setSubmitting(false)
-    if (!res.ok || !data.success) {
-      setError(data.error || 'Something went wrong. Try again.')
-      return
-    }
-    onSuccess()
-  }
-
-  if (!open) return null
-
   return (
-    <div role="dialog" aria-modal="true" style={{
-      position: 'fixed', inset: 0, zIndex: 60,
-      background: 'rgba(0,0,0,0.7)',
-      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-    }}
-      onClick={() => !submitting && onClose()}
-    >
-      <div onClick={e => e.stopPropagation()} style={{
-        width: '100%', maxWidth: 430,
-        background: '#1A1917',
-        borderTopLeftRadius: 24, borderTopRightRadius: 24,
-        padding: '18px 20px calc(28px + env(safe-area-inset-bottom))',
-      }}>
-        <div style={{ width: 36, height: 4, background: '#2A2825', borderRadius: 2, margin: '0 auto 14px' }} />
-
-        <p className="label-cap" style={{ color: '#FF3B30', margin: 0, fontSize: 10 }}>Cancel & refund</p>
-        <h2 className="font-display" style={{ fontSize: 22, margin: '2px 0 4px', color: 'white' }}>
-          What happened?
-        </h2>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', fontFamily: "'Nunito', sans-serif" }} onClick={onClose}>
+      <div style={{ background: '#1A1917', width: '100%', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: '20px 20px 32px', maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ width: 40, height: 4, background: '#2A2825', borderRadius: 2, margin: '0 auto 16px' }} />
+        <p style={{ color: '#FF3B30', margin: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Cancel & refund</p>
+        <h2 className="font-display" style={{ fontSize: 22, margin: '2px 0 4px', color: 'white' }}>What happened?</h2>
         <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: 600, margin: '0 0 16px', lineHeight: 1.5 }}>
           Send the customer&apos;s money back to them from your bank app, then confirm here. The order will be cancelled and you won&apos;t owe CampusRun anything for it.
         </p>
-
         {REASONS.map(r => (
-          <button key={r.key}
+          <button
+            key={r.key}
             onClick={() => setReason(r.key)}
-            className="press"
-            style={{
-              width: '100%',
-              background: reason === r.key ? 'rgba(255,59,48,0.15)' : '#0C0B09',
-              border: `2px solid ${reason === r.key ? '#FF3B30' : '#2A2825'}`,
-              borderRadius: 14, padding: '14px 16px', marginBottom: 8,
-              display: 'flex', alignItems: 'center', gap: 12,
-              cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-              minHeight: 56,
-            }}>
+            style={{ width: '100%', background: reason === r.key ? 'rgba(255,59,48,0.15)' : '#0C0B09', border: `2px solid ${reason === r.key ? '#FF3B30' : '#2A2825'}`, borderRadius: 14, padding: '14px 16px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', minHeight: 56 }}
+          >
             <span style={{ fontSize: 20 }}>{r.emoji}</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: reason === r.key ? '#FF3B30' : 'rgba(255,255,255,0.85)' }}>
-              {r.label}
-            </span>
+            <span style={{ color: 'white', fontWeight: 800, fontSize: 14 }}>{r.label}</span>
           </button>
         ))}
-
-        {error && (
-          <p style={{ color: '#FF3B30', fontSize: 12, fontWeight: 700, margin: '8px 0 0', textAlign: 'center' }}>
-            {error}
-          </p>
-        )}
-
-        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={onClose} disabled={submitting} className="press"
-            style={{
-              flex: 1, background: 'transparent',
-              color: 'rgba(255,255,255,0.7)',
-              fontWeight: 800, fontSize: 15,
-              padding: 16, borderRadius: 16,
-              border: '1.5px solid #2A2825',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              minHeight: 52,
-            }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button onClick={onClose} className="press" style={{ flex: 1, background: 'transparent', border: '1px solid #2A2825', color: 'white', fontWeight: 800, fontSize: 14, padding: 14, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', minHeight: 48 }}>
             Never mind
           </button>
-          <button onClick={submit} disabled={!reason || submitting} className="press"
-            style={{
-              flex: 1,
-              background: !reason ? '#333' : '#FF3B30',
-              color: 'white',
-              fontWeight: 900, fontSize: 15,
-              padding: 16, borderRadius: 16,
-              border: 'none',
-              cursor: (!reason || submitting) ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              opacity: submitting ? 0.7 : 1,
-              minHeight: 52,
-            }}>
-            {submitting ? 'Confirming...' : "I've sent the refund"}
+          <button
+            onClick={() => reason && onConfirm(reason)}
+            disabled={!reason || refunding}
+            className="press"
+            style={{ flex: 1, background: reason && !refunding ? '#FF3B30' : '#2A2825', color: 'white', fontWeight: 800, fontSize: 14, padding: 14, borderRadius: 12, border: 'none', cursor: reason && !refunding ? 'pointer' : 'not-allowed', fontFamily: 'inherit', minHeight: 48 }}
+          >
+            {refunding ? 'Confirming\u2026' : "I've sent the refund"}
           </button>
         </div>
       </div>
@@ -221,8 +146,9 @@ export default function RunnerOrderPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
-  const [showReturn, setShowReturn] = useState(false)
+  const [showRefund, setShowRefund] = useState(false)
   const [confirmingPayment, setConfirmingPayment] = useState(false)
+  const [refunding, setRefunding] = useState(false)
   const [chatOpen,   setChatOpen]   = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [cancelling, setCancelling] = useState(false)
@@ -251,12 +177,18 @@ export default function RunnerOrderPage() {
 
   useEffect(() => {
   const fetchOrder = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('orders')
       .select('*, restaurant:restaurants(name, location), customer:users!customer_id(full_name, phone)')
       .eq('id', id)
-      .single()
+      .maybeSingle()
+    if (error) {
+      console.error('[order] fetch failed:', error.message)
+      setLoading(false)
+      return
+    }
     if (data) { setOrder(data); setLoading(false) }
+    else { setLoading(false) }
   }
 
   fetchOrder()
@@ -302,7 +234,7 @@ export default function RunnerOrderPage() {
     if (success) { router.push('/dashboard') } else { alert(error || 'Could not cancel order') }
   }
 
-  // Runner-funded direct-pay: tap when the bank alert lands.
+  // Runner-funded direct-pay: tap when bank alert lands.
   async function confirmPayment() {
     if (confirmingPayment) return
     setConfirmingPayment(true)
@@ -313,10 +245,22 @@ export default function RunnerOrderPage() {
     })
     const { success, error } = await res.json()
     setConfirmingPayment(false)
-    if (!success) alert(error || "Couldn't confirm — try again in a moment.")
-    // On success the realtime subscription (or the router refresh below)
-    // will pull the new state and swap the UI.
+    if (!success) alert(error || "Couldn't confirm — try again.")
     router.refresh()
+  }
+
+  async function sendRefund(reason: string) {
+    if (refunding) return
+    setRefunding(true)
+    const res = await fetch('/api/runner/return-funds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: id, reason }),
+    })
+    const { success, error } = await res.json()
+    setRefunding(false)
+    setShowRefund(false)
+    if (success) { router.push('/dashboard') } else { alert(error || 'Refund confirmation failed') }
   }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#F5F5F0', fontSize: 40 }}>🛵</div>
@@ -328,30 +272,24 @@ export default function RunnerOrderPage() {
   const transferAmount = (order as Order & { transfer_ref?: string; transfer_amount?: number; transferred_at?: string }).transfer_amount
   const transferredAt  = (order as Order & { transfer_ref?: string; transfer_amount?: number; transferred_at?: string }).transferred_at
 
-  // Runner-funded fields — pulled from the same order row via new columns.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isRunnerFunded = (order as any).payment_model === 'runner_funded'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rfTransferRef = (order as any).runner_funded_transfer_ref as string | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rfTransferAmount = (order as any).runner_funded_transfer_amount as number | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rfTransferredAt = (order as any).runner_funded_transferred_at as string | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const foodTotal = (order as any).food_total ?? 0
+  const orderX = order as any
+  const isRunnerFunded = orderX.payment_model === 'runner_funded'
+  const isRfAwaitingPayment    = orderX.status === 'runner_funded_awaiting_payment'
+  const isRfPaymentConfirmed   = orderX.status === 'runner_funded_payment_confirmed'
+  const rfExpectedAmount   = orderX.runner_funded_payment_expected_amount as number | undefined
+  const rfPaymentDeadline  = orderX.runner_funded_payment_deadline as string | undefined
+  const platformOwed       = orderX.platform_owed_amount ?? 0
 
-  // Steps depend on payment model. Runner-funded direct-pay flow has
-  // a two-step preamble (customer sends → runner confirms) before the
-  // normal restaurant/pickup/delivery sequence.
   const steps = isRunnerFunded ? [
-    { status: 'runner_funded_awaiting_payment',   label: 'Wait for customer payment', sub: 'Check your bank alert', icon: '💸' },
-    { status: 'runner_funded_payment_confirmed',  label: 'Buy from restaurant', sub: restaurant?.name ?? '', icon: '🏪' },
-    { status: 'picked_up', label: 'Head to customer',   sub: 'Tap below once you have the food', icon: '📦' },
-    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '🏁' },
+    { status: 'runner_funded_awaiting_payment',  label: 'Wait for customer payment', sub: 'Check your bank alert', icon: '\uD83D\uDCB8' },
+    { status: 'runner_funded_payment_confirmed', label: 'Buy from restaurant', sub: restaurant?.name ?? '', icon: '\uD83C\uDFEA' },
+    { status: 'picked_up', label: 'Head to customer', sub: 'Tap below once you have the food', icon: '\uD83D\uDCE6' },
+    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '\uD83C\uDFC1' },
   ] : [
-    { status: 'runner_assigned', label: 'Head to restaurant', sub: restaurant?.name ?? '', icon: '🏪' },
-    { status: 'picked_up', label: 'Pick up the food', sub: 'Tap below when you have it', icon: '📦' },
-    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '🏁' },
+    { status: 'runner_assigned', label: 'Head to restaurant', sub: restaurant?.name ?? '', icon: '\uD83C\uDFEA' },
+    { status: 'picked_up', label: 'Pick up the food', sub: 'Tap below when you have it', icon: '\uD83D\uDCE6' },
+    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '\uD83C\uDFC1' },
   ]
   const STATUS_ORDER = isRunnerFunded
     ? ['runner_funded_awaiting_payment', 'runner_funded_payment_confirmed', 'picked_up', 'delivered']
@@ -360,26 +298,11 @@ export default function RunnerOrderPage() {
   const canCancel = order.status === 'runner_assigned' || order.status === 'preparing'
   const isPickedUp = order.status === 'picked_up'
   const isDelivered = order.status === 'delivered'
-  const isRfAwaitingPayment    = order.status === 'runner_funded_awaiting_payment'
-  const isRfPaymentConfirmed   = order.status === 'runner_funded_payment_confirmed'
-  // Direct-pay: pull expected amount + platform debt from the new columns
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rfExpectedAmount = (order as any).runner_funded_payment_expected_amount as number | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rfPaymentDeadline = (order as any).runner_funded_payment_deadline as string | undefined
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const platformOwed = (order as any).platform_owed_amount ?? 0
-  const customerPhone = customer?.phone
 
   return (
     <div style={S.page}>
       {showCancel && <CancelSheet onConfirm={cancelOrder} onClose={() => setShowCancel(false)} confirming={cancelling} />}
-      <ReturnFundsSheet
-        orderId={order.id}
-        open={showReturn}
-        onClose={() => setShowReturn(false)}
-        onSuccess={() => { setShowReturn(false); router.push('/dashboard') }}
-      />
+      {showRefund && <RefundSheet onConfirm={sendRefund} onClose={() => setShowRefund(false)} refunding={refunding} />}
       {chatOpen && order && customer && (
         <OrderChat
           orderId={order.id}
@@ -395,22 +318,113 @@ export default function RunnerOrderPage() {
         <h1 style={S.headerTitle}>Active Delivery</h1>
         <div style={S.refBadge}>{order.order_ref}</div>
         {isRunnerFunded ? (
-          <div style={{ background: '#CC9400', borderRadius: 10, padding: '10px 14px', marginTop: 12, display: 'inline-block' }}>
-            <p style={{ color: 'white', fontWeight: 900, fontSize: 16, margin: 0 }}>
-              Customer will send ₦{(rfExpectedAmount ?? (foodTotal + (order.runner_earnings ?? 300))).toLocaleString()}
+          <div style={{ background: '#CC9400', borderRadius: 10, padding: '10px 14px', display: 'inline-block' }}>
+            <p style={{ color: 'white', fontWeight: 900, fontSize: 15, margin: 0 }}>
+              Customer sending ₦{(rfExpectedAmount ?? 0).toLocaleString()}
             </p>
-            <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: 600, margin: '2px 0 0' }}>
-              Straight to your bank · you owe ₦{platformOwed.toLocaleString()} to CampusRun
+            <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: 600, margin: '2px 0 0' }}>
+              Straight to your bank · owe ₦{platformOwed.toLocaleString()} to CampusRun
             </p>
           </div>
         ) : (
           <div style={S.earningsBadge}>
-            <p style={{ color: 'white', fontWeight: 900, fontSize: 16, margin: 0 }}>₦{(order.runner_earnings ?? 300).toLocaleString()} earnings</p>
+            <p style={{ color: 'white', fontWeight: 900, fontSize: 16, margin: 0 }}>₦300 earnings</p>
             <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 600, margin: '2px 0 0' }}>Paid on delivery</p>
           </div>
         )}
       </div>
       <div style={S.body}>
+        {/* ══ RUNNER-FUNDED DIRECT-PAY CARD ══ */}
+        {isRunnerFunded && !isDelivered && (isRfAwaitingPayment || isRfPaymentConfirmed) && (
+          <div style={{
+            background: isRfAwaitingPayment ? 'linear-gradient(135deg, #2A1F00, #332600)' : 'linear-gradient(135deg, #0D2A1A, #0F3320)',
+            border: `1px solid ${isRfAwaitingPayment ? 'rgba(255,184,0,0.35)' : 'rgba(29,185,84,0.35)'}`,
+            borderRadius: 16,
+            padding: 16,
+            marginBottom: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: isRfAwaitingPayment ? 'rgba(255,184,0,0.15)' : 'rgba(29,185,84,0.15)', border: `1px solid ${isRfAwaitingPayment ? 'rgba(255,184,0,0.3)' : 'rgba(29,185,84,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                {isRfAwaitingPayment ? '⏳' : '✓'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ color: isRfAwaitingPayment ? '#FFB800' : '#1DB954', margin: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  {isRfAwaitingPayment ? 'Waiting for payment' : 'Payment confirmed'}
+                </p>
+                <p style={{ color: 'white', fontWeight: 800, fontSize: 14, margin: '2px 0 0' }}>
+                  {isRfAwaitingPayment ? 'Check your bank alerts' : `Head to ${restaurant?.name ?? 'the restaurant'}`}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(0,0,0,0.35)', borderRadius: 12, padding: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 600 }}>Customer sending</span>
+                <span style={{ color: 'white', fontSize: 14, fontWeight: 800, fontFamily: 'monospace' }}>₦{(rfExpectedAmount ?? 0).toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, paddingBottom: 8, borderBottom: '1px dashed rgba(255,255,255,0.1)' }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 600 }}>You spend on food</span>
+                <span style={{ color: 'white', fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>₦{(order.food_total ?? 0).toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 600 }}>Your earnings</span>
+                <span style={{ color: '#1DB954', fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>₦{(order.runner_earnings ?? 300).toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                <span style={{ color: 'white', fontSize: 13, fontWeight: 800 }}>You owe CampusRun</span>
+                <span style={{ color: '#FFB800', fontSize: 15, fontWeight: 900, fontFamily: 'monospace' }}>₦{platformOwed.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {isRfAwaitingPayment && rfPaymentDeadline && (
+              <div style={{ marginTop: 12, padding: 10, background: 'rgba(0,0,0,0.35)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: 700 }}>Auto-cancels if no payment by</span>
+                <span style={{ color: 'white', fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>
+                  {new Date(rfPaymentDeadline).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            )}
+
+            {isRfAwaitingPayment && (
+              <button
+                onClick={confirmPayment}
+                disabled={confirmingPayment}
+                className="press"
+                style={{ width: '100%', marginTop: 14, background: confirmingPayment ? '#0D7A38' : '#1DB954', color: 'white', fontWeight: 900, fontSize: 15, padding: 16, borderRadius: 14, border: 'none', cursor: confirmingPayment ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: confirmingPayment ? 0.7 : 1, minHeight: 52 }}
+              >
+                {confirmingPayment ? 'Confirming\u2026' : '\u2713 I received the payment'}
+              </button>
+            )}
+
+            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 600, margin: '12px 0 0', lineHeight: 1.5 }}>
+              {isRfAwaitingPayment
+                ? 'Only tap when your bank actually alerts you.'
+                : `Buy the food and head over. If the restaurant overcharges, don't eat the loss — message admin.`}
+            </p>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <a
+                href={`https://wa.me/${process.env.NEXT_PUBLIC_ADMIN_WHATSAPP ?? '2348068404839'}?text=${encodeURIComponent(`Order ${order.order_ref} — `)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="press"
+                style={{ flex: 1, background: 'rgba(29,185,84,0.15)', color: '#1DB954', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, border: '1px solid rgba(29,185,84,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', minHeight: 44 }}
+              >
+                💬 Message admin
+              </a>
+              {isRfPaymentConfirmed && (
+                <button
+                  onClick={() => setShowRefund(true)}
+                  className="press"
+                  style={{ flex: 1, background: 'rgba(255,59,48,0.1)', color: '#FF3B30', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, border: '1px solid rgba(255,59,48,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit', minHeight: 44 }}
+                >
+                  ↩ Refund
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        
         <div style={S.card}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={S.avatarCircle}>👤</div>
@@ -443,143 +457,6 @@ export default function RunnerOrderPage() {
             </div>
           )}
         </div>
-        {/* ═════════════════════════════════════════════════════════
-            RUNNER-FUNDED DIRECT-PAY CARD
-            Adapts to state:
-              awaiting_payment    → "waiting for customer to send"
-              payment_confirmed   → "money received, go buy the food"
-            After picked_up, the runner-funded UI collapses — normal
-            delivery flow takes over.
-            ═════════════════════════════════════════════════════════ */}
-        {isRunnerFunded && !isDelivered && (isRfAwaitingPayment || isRfPaymentConfirmed) && (
-          <div style={{
-            background: isRfAwaitingPayment
-              ? 'linear-gradient(135deg, #2A1F00, #332600)'
-              : 'linear-gradient(135deg, #0D2A1A, #0F3320)',
-            border: `1px solid ${isRfAwaitingPayment ? 'rgba(255,184,0,0.35)' : 'rgba(29,185,84,0.35)'}`,
-            borderRadius: 16,
-            padding: 16,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: 8,
-                background: isRfAwaitingPayment ? 'rgba(255,184,0,0.15)' : 'rgba(29,185,84,0.15)',
-                border: `1px solid ${isRfAwaitingPayment ? 'rgba(255,184,0,0.3)' : 'rgba(29,185,84,0.3)'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 16,
-              }}>{isRfAwaitingPayment ? '⏳' : '✓'}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p className="label-cap" style={{ color: isRfAwaitingPayment ? '#FFB800' : '#1DB954', margin: 0, fontSize: 10 }}>
-                  {isRfAwaitingPayment ? 'Waiting for payment' : 'Payment confirmed'}
-                </p>
-                <p style={{ color: 'white', fontWeight: 800, fontSize: 14, margin: '2px 0 0' }}>
-                  {isRfAwaitingPayment
-                    ? 'Check your bank alerts'
-                    : `Head to ${restaurant?.name ?? 'the restaurant'}`}
-                </p>
-              </div>
-            </div>
-
-            {/* Amount breakdown */}
-            <div style={{ background: 'rgba(0,0,0,0.35)', borderRadius: 12, padding: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 600 }}>Customer sending</span>
-                <span style={{ color: 'white', fontSize: 14, fontWeight: 800, fontFamily: 'monospace' }}>
-                  ₦{(rfExpectedAmount ?? 0).toLocaleString()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, paddingBottom: 8, borderBottom: '1px dashed rgba(255,255,255,0.1)' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 600 }}>You spend on food</span>
-                <span style={{ color: 'white', fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>
-                  ₦{foodTotal.toLocaleString()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: 600 }}>Your earnings</span>
-                <span style={{ color: '#1DB954', fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>
-                  ₦{(order.runner_earnings ?? 300).toLocaleString()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-                <span style={{ color: 'white', fontSize: 13, fontWeight: 800 }}>You owe CampusRun</span>
-                <span style={{ color: '#FFB800', fontSize: 15, fontWeight: 900, fontFamily: 'monospace' }}>
-                  ₦{platformOwed.toLocaleString()}
-                </span>
-              </div>
-            </div>
-
-            {/* Deadline display when waiting */}
-            {isRfAwaitingPayment && rfPaymentDeadline && (
-              <div style={{ marginTop: 12, padding: 10, background: 'rgba(0,0,0,0.35)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: 700 }}>
-                  Auto-cancels if no payment by
-                </span>
-                <span style={{ color: 'white', fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>
-                  {new Date(rfPaymentDeadline).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            )}
-
-            {/* Confirm-received CTA (only while awaiting) */}
-            {isRfAwaitingPayment && (
-              <button
-                onClick={confirmPayment}
-                disabled={confirmingPayment}
-                className="press"
-                style={{
-                  width: '100%', marginTop: 14,
-                  background: confirmingPayment ? '#0D7A38' : '#1DB954',
-                  color: 'white', fontWeight: 900, fontSize: 15,
-                  padding: 16, borderRadius: 14, border: 'none',
-                  cursor: confirmingPayment ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                  opacity: confirmingPayment ? 0.7 : 1,
-                  minHeight: 52,
-                }}
-              >
-                {confirmingPayment ? 'Confirming…' : '✓ I received the payment'}
-              </button>
-            )}
-
-            {/* Contextual guidance */}
-            <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 600, margin: '12px 0 0', lineHeight: 1.5 }}>
-              {isRfAwaitingPayment
-                ? 'Only tap when your bank actually alerts you. The customer sees your account details on their end.'
-                : `Buy the food and head over. If the restaurant overcharges you, don't eat the loss — message the admin.`}
-            </p>
-
-            {/* Actions row */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-              {isRfAwaitingPayment && customerPhone && (
-                <a
-                  href={`tel:${customerPhone}`}
-                  className="press"
-                  style={{ flex: 1, background: 'rgba(255,184,0,0.15)', color: '#FFB800', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, border: '1px solid rgba(255,184,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', minHeight: 44 }}
-                >
-                  📞 Call customer
-                </a>
-              )}
-              <a
-                href={`https://wa.me/${process.env.NEXT_PUBLIC_ADMIN_WHATSAPP ?? '2348068404839'}?text=${encodeURIComponent(`Order ${order.order_ref} — `)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="press"
-                style={{ flex: 1, background: 'rgba(29,185,84,0.15)', color: '#1DB954', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, border: '1px solid rgba(29,185,84,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', minHeight: 44 }}
-              >
-                💬 Message admin
-              </a>
-              {isRfPaymentConfirmed && (
-                <button
-                  onClick={() => setShowReturn(true)}
-                  className="press"
-                  style={{ flex: 1, background: 'rgba(255,59,48,0.1)', color: '#FF3B30', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, border: '1px solid rgba(255,59,48,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit', minHeight: 44 }}
-                >
-                  ↩ Refund
-                </button>
-              )}
-            </div>
-          </div>
-        )}
         {transferRef && (
           <div style={{
             background: 'linear-gradient(135deg, #0D2A1A, #0F3320)',

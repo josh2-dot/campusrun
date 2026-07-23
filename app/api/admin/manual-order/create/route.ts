@@ -131,19 +131,17 @@ export async function POST(req: NextRequest) {
   const draftToken = crypto.randomBytes(16).toString('hex')
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString() // 1 hour
 
-  // Look up the restaurant's runner-funded flag so this manual order
-  // gets routed correctly. Without this, admin-created orders always
-  // default to restaurant_paid regardless of what the flag says on the
-  // restaurant — matching the DB default, but wrong for flagged
-  // restaurants like off-campus unregistered ones.
-  const { data: restaurantRow } = await admin
+  // Read the restaurant's runner-funded flag so payment_model gets set correctly.
+  // Without this, admin-created orders default to restaurant_paid regardless of
+  // the restaurant's flag.
+  const { data: restRow } = await admin
     .from('restaurants')
     .select('requires_runner_funded')
     .eq('id', restaurant_id)
-    .single()
+    .maybeSingle()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paymentModel: 'restaurant_paid' | 'runner_funded' =
-    (restaurantRow as any)?.requires_runner_funded ? 'runner_funded' : 'restaurant_paid'
+    (restRow as any)?.requires_runner_funded ? 'runner_funded' : 'restaurant_paid'
 
   // Insert the draft order
   const { data: order, error: orderErr } = await admin

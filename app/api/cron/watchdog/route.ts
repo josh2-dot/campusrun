@@ -320,23 +320,21 @@ export async function GET(request: NextRequest) {
   }
 
   console.log('[watchdog] Done', results)
-  /* ───────────────────────────────────────────────────────────
+  /* ────────────────────────────────────────────────────────
      JOB — Runner-funded payment timeout
-     Orders sitting in runner_funded_awaiting_payment past their
-     deadline (customer never sent the money) get auto-cancelled
-     and the runner is freed. Runner earnings and platform debt
-     are cleared since no service was delivered.
+     Auto-cancel orders sitting in runner_funded_awaiting_payment
+     past their deadline. Frees the runner. Zeros platform debt.
   ──────────────────────────────────────────────────────── */
   {
-    const { data: expired } = await supabase
+    const { data: expired, error: expErr } = await supabase
       .from('orders')
       .select('id, order_ref, customer_id, runner_id')
       .eq('status', 'runner_funded_awaiting_payment')
       .lt('runner_funded_payment_deadline', now.toISOString())
 
-    if (expired?.length) {
+    if (!expErr && expired?.length) {
       for (const o of expired) {
-        await supabase.from('orders').update({
+        const { error: cancelErr } = await supabase.from('orders').update({
           status: 'cancelled',
           cancelled_by: 'system',
           cancel_reason: 'Customer did not send payment before deadline',
@@ -344,19 +342,21 @@ export async function GET(request: NextRequest) {
           platform_owed_amount: 0,
         }).eq('id', o.id).eq('status', 'runner_funded_awaiting_payment')
 
+        if (cancelErr) continue
+
         results.rf_payment_timeouts++
 
         await sendPushToUser(o.customer_id, {
-          title: '⏱️ Order cancelled',
-          body: `${o.order_ref} was cancelled because payment wasn't received in time. Try again when you're ready.`,
-          url: `/orders`,
+          title: '\u23F1\uFE0F Order cancelled',
+          body: `${o.order_ref} was cancelled — payment wasn't received in time. Try again when you're ready.`,
+          url: '/orders',
           tag: 'order-timeout',
         })
         if (o.runner_id) {
           await sendPushToUser(o.runner_id, {
-            title: '⏱️ Order timed out',
+            title: '\u23F1\uFE0F Order timed out',
             body: `${o.order_ref} auto-cancelled — customer never paid. You're free for the next one.`,
-            url: `/dashboard`,
+            url: '/dashboard',
             tag: 'order-freed',
           })
         }

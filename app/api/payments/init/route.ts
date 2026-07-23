@@ -1,20 +1,20 @@
 // app/api/payments/init/route.ts
-// Rate limited: max 2 active orders per customer at a time
-// Daily cap: admin-configurable via app_config table (0 = unlimited)
+// Rate limited: max 2 active orders per customer at a time.
 //
-// Two payment models handled:
-//   restaurant_paid — existing Paystack initialization (returns auth URL)
-//   runner_funded   — no Paystack call. Order flips straight to
-//                     confirmed → auto-allocation to runners. Customer
-//                     will pay the runner directly once one accepts.
+// Two payment models:
+//   restaurant_paid — Paystack initialization (returns auth URL)
+//   runner_funded   — no Paystack. Order flips to confirmed and we
+//                     broadcast to available runners directly.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { sendPushToUser, sendPushToAvailableRunners } from '@/lib/send-push'
 import { captureError } from '@/lib/sentry'
 
-const ACTIVE_STATUSES = ['pending', 'confirmed', 'awaiting_runner', 'runner_assigned', 'preparing',
-  'runner_funded_awaiting_payment', 'runner_funded_payment_confirmed', 'picked_up']
+const ACTIVE_STATUSES = [
+  'pending', 'confirmed', 'awaiting_runner', 'runner_assigned', 'preparing',
+  'runner_funded_awaiting_payment', 'runner_funded_payment_confirmed', 'picked_up',
+]
 
 export async function POST(request: NextRequest) {
   const { orderId, amount, email } = await request.json()
@@ -29,7 +29,6 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient()
 
-  // ── 1. Per-customer rate limit ───────────────────────────────────
   const { count: activeCount } = await admin
     .from('orders')
     .select('*', { count: 'exact', head: true })
@@ -42,29 +41,29 @@ export async function POST(request: NextRequest) {
     }, { status: 429 })
   }
 
-  // ── 2. Load order for payment_model + auto-allocation ─────────────
-  const { data: orderRaw } = await admin
+  const { data: orderRaw, error: orderErr } = await admin
     .from('orders')
     .select('id, payment_model, restaurant_id, food_total, delivery_address, order_ref')
     .eq('id', orderId)
-    .single()
+    .maybeSingle()
+
+  if (orderErr) {
+    return NextResponse.json({ error: `Order lookup failed: ${orderErr.message}` }, { status: 500 })
+  }
+  if (!orderRaw) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const order = orderRaw as any
 
-  if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
-
-  // ── 3. Runner-funded shortcut ────────────────────────────────────
-  // No Paystack, no float check (nothing coming out of CampusRun's
-  // account for these orders). Order flips to confirmed → we broadcast
-  // to available runners. First allowlisted runner to accept takes it.
+  // ── Runner-funded shortcut — no Paystack ─────────────────────────
   if (order.payment_model === 'runner_funded') {
-    await admin
-      .from('orders')
-      .update({ status: 'confirmed' })
-      .eq('id', orderId)
+    const { error: statusErr } = await admin
+      .from('orders').update({ status: 'confirmed' }).eq('id', orderId)
+    if (statusErr) {
+      return NextResponse.json({ error: `Status update failed: ${statusErr.message}` }, { status: 500 })
+    }
 
     await sendPushToUser(user.id, {
-      title: '✅ Order placed',
+      title: '\u2705 Order placed',
       body: `Order ${order.order_ref} placed. Finding a runner for you now.`,
       url: `/track/${orderId}`,
       tag: 'order-placed',
@@ -78,13 +77,15 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // ── 4. Float capacity check (restaurant-paid only) ────────────────
-  const { data: balanceRow }     = await admin.from('app_config').select('value').eq('key', 'float_balance').single()
-  const { data: bufferRow }      = await admin.from('app_config').select('value').eq('key', 'float_safety_buffer').single()
+  // ── Float capacity check (restaurant_paid only) ──────────────────
+  const { data: balanceRow }     = await admin.from('app_config').select('value').eq('key', 'float_balance').maybeSingle()
+  const { data: bufferRow }      = await admin.from('app_config').select('value').eq('key', 'float_safety_buffer').maybeSingle()
   const { data: avgCostResult }  = await admin.rpc('estimate_order_net_cost')
 
-  const floatBalance  = parseFloat(balanceRow?.value ?? '0')
-  const safetyBuffer  = parseFloat(bufferRow?.value ?? '10000')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const floatBalance  = parseFloat((balanceRow as any)?.value ?? '0')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const safetyBuffer  = parseFloat((bufferRow as any)?.value ?? '10000')
   const estCost       = parseFloat(String(avgCostResult ?? '3500'))
 
   if (floatBalance - estCost < safetyBuffer) {
@@ -94,12 +95,12 @@ export async function POST(request: NextRequest) {
       extra: { floatBalance, estCost, safetyBuffer },
     })
     return NextResponse.json({
-      error: `We're temporarily at capacity — back to taking orders very soon. Check our WhatsApp status for updates 🙏`,
+      error: "We're temporarily at capacity — back to taking orders very soon. Check our WhatsApp status for updates \uD83D\uDE4F",
       code: 'FLOAT_DEPLETED',
     }, { status: 503 })
   }
 
-  // ── 5. Pre-order detection ──────────────────────────────────────────────
+  // ── Pre-order detection ──────────────────────────────────────────
   try {
     if (order?.restaurant_id) {
       const { data: rest } = await admin
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
     console.error('[pre-order tagging]', err)
   }
 
-  // ── 6. Paystack initialization ─────────────────────────────────────────
+  // ── Paystack init ────────────────────────────────────────────────
   try {
     const res = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
@@ -193,27 +194,28 @@ export async function POST(request: NextRequest) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Auto-allocation
-// ───────────────────────────────────────────────────────────────────
-//  Same logic as the webhook's post-payment allocation, but called
-//  directly here for runner-funded orders (they don't go through the
-//  charge.success path). Broadcast to available runners so an
-//  allowlisted one can accept.
+//  Auto-allocation for runner-funded orders
 // ═══════════════════════════════════════════════════════════════════
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function triggerAutoAllocation(orderId: string, admin: any) {
   const { data: orderRaw } = await admin
     .from('orders')
-    .select('*, restaurant:restaurants(name, location)')
+    .select('id, order_ref, delivery_address, runner_earnings, restaurant_id')
     .eq('id', orderId)
-    .single()
+    .maybeSingle()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const order = orderRaw as any
   if (!order) return
 
+  // Explicit restaurant lookup (no PostgREST join dependency)
+  const { data: restRaw } = await admin
+    .from('restaurants').select('name').eq('id', order.restaurant_id).maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const restaurantName = (restRaw as any)?.name ?? 'the restaurant'
+
   const { data: runners } = await admin
     .from('runner_profiles')
-    .select('user_id, users(phone, full_name)')
+    .select('user_id, users(phone)')
     .eq('is_available', true)
 
   if (!runners?.length) {
@@ -223,12 +225,12 @@ async function triggerAutoAllocation(orderId: string, admin: any) {
       broadcast_count: 1,
     }).eq('id', orderId)
     if (process.env.ADMIN_PHONE) {
-      await sendSMS(process.env.ADMIN_PHONE, `⚠️ CampusRun: Order ${order.order_ref} confirmed but no runners online. Watchdog will retry.`)
+      await sendSMS(process.env.ADMIN_PHONE, `\u26A0\uFE0F CampusRun: Order ${order.order_ref} confirmed but no runners online. Watchdog will retry.`)
     }
     return
   }
 
-  const msg = `🛵 New order ${order.order_ref}! Earn ₦${order.runner_earnings ?? 300}. From: ${order.restaurant?.name}. Drop: ${order.delivery_address}. Accept: ${process.env.NEXT_PUBLIC_APP_URL}/order/${orderId}`
+  const msg = `\uD83D\uDEF5 New order ${order.order_ref}! Earn \u20A6${order.runner_earnings ?? 300}. From: ${restaurantName}. Drop: ${order.delivery_address}. Accept: ${process.env.NEXT_PUBLIC_APP_URL}/order/${orderId}`
   await Promise.all(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     runners.map((r: any) => {
@@ -238,8 +240,8 @@ async function triggerAutoAllocation(orderId: string, admin: any) {
   )
 
   await sendPushToAvailableRunners({
-    title: '🛵 New order available!',
-    body: `Order ${order.order_ref} — earn ₦${order.runner_earnings ?? 300} from ${order.restaurant?.name ?? 'restaurant'}.`,
+    title: '\uD83D\uDEF5 New order available!',
+    body: `Order ${order.order_ref} \u2014 earn \u20A6${order.runner_earnings ?? 300} from ${restaurantName}.`,
     url: '/dashboard',
     tag: 'new-order',
   })

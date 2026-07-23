@@ -1,9 +1,7 @@
 // app/api/payments/webhook/route.ts
 //
-// Paystack webhook handler. Only handles restaurant_paid orders now —
-// runner-funded orders bypass Paystack entirely (customer sends money
-// directly to runner's bank account, no charge or transfer webhooks
-// fire for them).
+// Handles Paystack charge.success ONLY for restaurant_paid orders.
+// Runner-funded orders bypass Paystack entirely; no webhooks fire for them.
 
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
@@ -47,7 +45,7 @@ export async function POST(request: NextRequest) {
       .from('orders')
       .select('status, customer_id, order_ref, scheduled_for, payment_model')
       .eq('id', orderId)
-      .single()
+      .maybeSingle()
 
     if (!orderRaw) return NextResponse.json({ received: true })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,8 +53,7 @@ export async function POST(request: NextRequest) {
     if (!['pending', 'confirmed'].includes(order.status)) {
       return NextResponse.json({ received: true })
     }
-    // Defensive: runner-funded orders shouldn't hit this path (they're
-    // confirmed at /api/payments/init) but skip cleanly if they do.
+    // Defensive: runner-funded should never hit this branch
     if (order.payment_model === 'runner_funded') {
       return NextResponse.json({ received: true })
     }
@@ -93,28 +90,36 @@ export async function POST(request: NextRequest) {
 async function triggerAutoAllocation(orderId: string, supabase: ReturnType<typeof createAdminClient>) {
   const { data: order } = await supabase
     .from('orders')
-    .select('*, restaurant:restaurants(name, location)')
+    .select('id, order_ref, delivery_address, restaurant_id')
     .eq('id', orderId)
-    .single()
+    .maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const o = order as any
+  if (!o) return
 
-  if (!order) return
+  const { data: restRaw } = await supabase
+    .from('restaurants').select('name').eq('id', o.restaurant_id).maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const restaurantName = (restRaw as any)?.name ?? 'the restaurant'
 
   const { data: runners } = await supabase
     .from('runner_profiles')
-    .select('user_id, users(phone, full_name)')
+    .select('user_id, users(phone)')
     .eq('is_available', true)
 
   if (!runners?.length) {
     await supabase.from('orders').update({
-      status:          'awaiting_runner',
-      broadcast_at:    new Date().toISOString(),
+      status: 'awaiting_runner',
+      broadcast_at: new Date().toISOString(),
       broadcast_count: 1,
     }).eq('id', orderId)
-    await sendSMS(process.env.ADMIN_PHONE!, `\u26A0\uFE0F CampusRun: Order ${order.order_ref} confirmed but no runners online. Watchdog will retry.`)
+    if (process.env.ADMIN_PHONE) {
+      await sendSMS(process.env.ADMIN_PHONE, `\u26A0\uFE0F CampusRun: Order ${o.order_ref} confirmed but no runners online. Watchdog will retry.`)
+    }
     return
   }
 
-  const msg = `\uD83D\uDEF5 New order ${order.order_ref}! Earn \u20A6300. From: ${order.restaurant?.name}. Drop: ${order.delivery_address}. Accept: ${process.env.NEXT_PUBLIC_APP_URL}/order/${orderId}`
+  const msg = `\uD83D\uDEF5 New order ${o.order_ref}! Earn \u20A6300. From: ${restaurantName}. Drop: ${o.delivery_address}. Accept: ${process.env.NEXT_PUBLIC_APP_URL}/order/${orderId}`
   await Promise.all(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     runners.map((r: any) => {
@@ -125,7 +130,7 @@ async function triggerAutoAllocation(orderId: string, supabase: ReturnType<typeo
 
   await sendPushToAvailableRunners({
     title: '\uD83D\uDEF5 New order available!',
-    body: `Order ${order.order_ref} \u2014 earn \u20A6300 from ${order.restaurant?.name ?? 'restaurant'}.`,
+    body: `Order ${o.order_ref} \u2014 earn \u20A6300 from ${restaurantName}.`,
     url: '/dashboard',
     tag: 'new-order',
   })

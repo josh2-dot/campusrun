@@ -1,10 +1,8 @@
 'use client'
 
 // /admin/settlements — track what runners owe CampusRun and record
-// when they've paid up. Runner keeps the customer's payment in their
-// bank account; the delivery + plate fees minus their earnings is the
-// debt they owe CampusRun. When they send it (bank transfer to admin),
-// mark it here.
+// when they've paid up. Read-only for outstanding + history; POST
+// records a settlement grouped by orders selected.
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -82,17 +80,13 @@ export default function SettlementsPage() {
   function toggle(runnerId: string, orderId: string) {
     setSelected(prev => {
       const cur = new Set(prev[runnerId] ?? [])
-      if (cur.has(orderId)) cur.delete(orderId)
-      else cur.add(orderId)
+      if (cur.has(orderId)) cur.delete(orderId); else cur.add(orderId)
       return { ...prev, [runnerId]: cur }
     })
   }
 
   function selectAll(r: RunnerGroup) {
-    setSelected(prev => ({
-      ...prev,
-      [r.runner_id]: new Set(r.orders.map(o => o.id)),
-    }))
+    setSelected(prev => ({ ...prev, [r.runner_id]: new Set(r.orders.map(o => o.id)) }))
   }
 
   async function record(r: RunnerGroup) {
@@ -127,25 +121,15 @@ export default function SettlementsPage() {
 
   return (
     <div className="mobile-container" style={{ display: 'flex', flexDirection: 'column', fontFamily: "'Nunito', system-ui, sans-serif" }}>
-      {/* ── HEADER ────────────────────────────────────────────── */}
       <div className="dot-texture" style={{ padding: '52px 20px 20px', borderBottom: '1px solid #2A2825' }}>
-        <Link
-          href="/admin/dashboard"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: '#A09A8E', textDecoration: 'none', marginBottom: 12 }}
-        >
+        <Link href="/admin/dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: '#A09A8E', textDecoration: 'none', marginBottom: 12 }}>
           ← Dashboard
         </Link>
-        <div>
-          <p className="label-cap" style={{ color: '#FF6B2B', margin: 0, fontSize: 10 }}>
-            Runner-funded flow
-          </p>
-          <h1 className="font-display" style={{ color: 'white', fontSize: 24, margin: '2px 0 0' }}>
-            Runner settlements
-          </h1>
-          <p style={{ color: '#6B6660', fontSize: 12, fontWeight: 600, margin: '4px 0 0' }}>
-            What runners owe CampusRun from delivered runner-funded orders
-          </p>
-        </div>
+        <p className="label-cap" style={{ color: '#FF6B2B', margin: 0, fontSize: 10 }}>Runner-funded flow</p>
+        <h1 className="font-display" style={{ color: 'white', fontSize: 24, margin: '2px 0 0' }}>Runner settlements</h1>
+        <p style={{ color: '#6B6660', fontSize: 12, fontWeight: 600, margin: '4px 0 0' }}>
+          What runners owe CampusRun from delivered runner-funded orders
+        </p>
 
         {totalOutstanding > 0 && (
           <div style={{ marginTop: 14, background: 'rgba(255,107,43,0.08)', border: '1px solid rgba(255,107,43,0.25)', borderRadius: 14, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -162,13 +146,9 @@ export default function SettlementsPage() {
         )}
       </div>
 
-      {/* ── TABS ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, padding: '14px 14px 0' }}>
         {(['outstanding', 'history'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="press"
+          <button key={t} onClick={() => setTab(t)} className="press"
             style={{ flex: 1, background: tab === t ? '#FF6B2B' : 'transparent', color: tab === t ? 'white' : '#A09A8E', border: `1px solid ${tab === t ? '#FF6B2B' : '#2A2825'}`, fontWeight: 800, fontSize: 13, padding: 10, borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize', minHeight: 40 }}
           >
             {t} {t === 'outstanding' && outstanding.length > 0 && `(${outstanding.length})`}
@@ -176,7 +156,6 @@ export default function SettlementsPage() {
         ))}
       </div>
 
-      {/* ── LIST ──────────────────────────────────────────────── */}
       <div style={{ padding: 14, flex: 1, overflowY: 'auto' }}>
         {tab === 'outstanding' ? (
           outstanding.length === 0 ? (
@@ -190,9 +169,7 @@ export default function SettlementsPage() {
             const selAmount = r.orders.filter(o => sel.has(o.id)).reduce((s, o) => s + o.amount, 0)
             return (
               <div key={r.runner_id} style={{ background: '#1A1917', border: '1px solid #2A2825', borderRadius: 16, marginBottom: 10, overflow: 'hidden' }}>
-                <button
-                  onClick={() => setExpanded(isExpanded ? null : r.runner_id)}
-                  className="press"
+                <button onClick={() => setExpanded(isExpanded ? null : r.runner_id)} className="press"
                   style={{ width: '100%', background: 'transparent', border: 'none', padding: 14, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 60 }}
                 >
                   <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,107,43,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -213,9 +190,7 @@ export default function SettlementsPage() {
                 {isExpanded && (
                   <div style={{ padding: '0 14px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <p className="label-cap" style={{ color: '#A09A8E', margin: 0, fontSize: 9 }}>
-                        Outstanding orders
-                      </p>
+                      <p className="label-cap" style={{ color: '#A09A8E', margin: 0, fontSize: 9 }}>Outstanding orders</p>
                       <button onClick={() => selectAll(r)} className="press" style={{ background: 'transparent', color: '#FF6B2B', border: 'none', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', padding: 4, minHeight: 28 }}>
                         Select all
                       </button>
@@ -224,10 +199,7 @@ export default function SettlementsPage() {
                     {r.orders.map(o => {
                       const isSel = sel.has(o.id)
                       return (
-                        <button
-                          key={o.id}
-                          onClick={() => toggle(r.runner_id, o.id)}
-                          className="press"
+                        <button key={o.id} onClick={() => toggle(r.runner_id, o.id)} className="press"
                           style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: isSel ? 'rgba(255,107,43,0.1)' : '#0C0B09', border: `1px solid ${isSel ? '#FF6B2B' : '#2A2825'}`, borderRadius: 10, padding: 10, marginBottom: 6, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minHeight: 48 }}
                         >
                           <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${isSel ? '#FF6B2B' : '#2A2825'}`, background: isSel ? '#FF6B2B' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'white', fontSize: 11, fontWeight: 900 }}>
@@ -254,16 +226,11 @@ export default function SettlementsPage() {
                         <p className="font-display" style={{ fontSize: 22, color: 'white', margin: '2px 0 10px', lineHeight: 1 }}>
                           {N}{selAmount.toLocaleString()}
                         </p>
-                        <input
-                          value={bankRef[r.runner_id] ?? ''}
-                          onChange={e => setBankRef(p => ({ ...p, [r.runner_id]: e.target.value }))}
+                        <input value={bankRef[r.runner_id] ?? ''} onChange={e => setBankRef(p => ({ ...p, [r.runner_id]: e.target.value }))}
                           placeholder="Bank ref (optional)"
                           style={{ width: '100%', background: '#1A1917', border: '1px solid #2A2825', borderRadius: 8, padding: 10, fontSize: 12, fontWeight: 700, color: 'white', fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 8, minHeight: 40 }}
                         />
-                        <button
-                          onClick={() => record(r)}
-                          disabled={recording[r.runner_id]}
-                          className="press"
+                        <button onClick={() => record(r)} disabled={recording[r.runner_id]} className="press"
                           style={{ width: '100%', background: recording[r.runner_id] ? '#cc5522' : '#FF6B2B', color: 'white', fontWeight: 900, fontSize: 14, padding: 12, borderRadius: 10, border: 'none', cursor: recording[r.runner_id] ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: recording[r.runner_id] ? 0.7 : 1, minHeight: 44 }}
                         >
                           {recording[r.runner_id] ? 'Recording…' : `Mark ${N}${selAmount.toLocaleString()} settled →`}

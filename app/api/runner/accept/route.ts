@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
 
   const { data: preOrderRaw } = await admin
     .from('orders')
-    .select('id, payment_model, food_total, delivery_fee, runner_earnings, plate_fee, status, runner_id')
+    .select('id, payment_model, food_total, delivery_fee, runner_earnings, status, runner_id')
     .eq('id', orderId)
     .single()
 
@@ -78,10 +78,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Customer pays food_total + delivery_fee. plate_fee doesn't exist
+    // as a column — checkout folds it into food_total on insert.
     const foodTotal = preOrder.food_total ?? 0
     const deliveryFee = preOrder.delivery_fee ?? 0
-    const plateFee = preOrder.plate_fee ?? 0
-    const customerPayment = foodTotal + deliveryFee + plateFee
+    const customerPayment = foodTotal + deliveryFee
 
     if (customerPayment > RUNNER_FUNDED_PER_ORDER_CAP_NAIRA) {
       return NextResponse.json({
@@ -120,16 +121,17 @@ export async function POST(request: NextRequest) {
   if (isRunnerFunded) {
     const foodTotal = preOrder.food_total ?? 0
     const deliveryFee = preOrder.delivery_fee ?? 0
-    const plateFee = preOrder.plate_fee ?? 0
     const runnerEarnings = preOrder.runner_earnings ?? 0
 
-    updates.runner_funded_payment_expected_amount = foodTotal + deliveryFee + plateFee
+    // Customer sends food_total + delivery_fee (same as they'd pay via
+    // Paystack). Runner spends food_total at the restaurant, keeps
+    // runner_earnings, and owes CampusRun the remainder of the delivery
+    // fee (which is what would normally cover platform_cut).
+    updates.runner_funded_payment_expected_amount = foodTotal + deliveryFee
     updates.runner_funded_payment_deadline = new Date(
       Date.now() + PAYMENT_DEADLINE_MINUTES * 60 * 1000
     ).toISOString()
-    // What the runner owes CampusRun. Set now (not on payment confirm)
-    // so we don't lose it if the confirmation flow bugs out.
-    updates.platform_owed_amount = deliveryFee + plateFee - runnerEarnings
+    updates.platform_owed_amount = deliveryFee - runnerEarnings
   }
 
   const { data, error } = await admin

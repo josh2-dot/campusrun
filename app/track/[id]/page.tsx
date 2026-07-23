@@ -116,13 +116,16 @@ function DeliveryCodeCard({ code }: { code: string }) {
 function SendPaymentCard({ order, runner }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   order: any
-  runner: { full_name: string; phone: string }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  runner: { full_name: string; phone: string; runner_profile?: any }
 }) {
   const [copied, setCopied] = useState<'account' | 'amount' | null>(null)
   const [countdown, setCountdown] = useState('')
 
-  // Bank details are on runner_profile, joined from runner_profiles
-  const profile = order.runner_profile
+  // Bank details are on runner_profile, joined from runner_profiles.
+  // PostgREST doesn't have a direct FK from orders → runner_profiles,
+  // so we nest the join through users: orders → users → runner_profiles.
+  const profile = runner.runner_profile
   const bankProfile = Array.isArray(profile) ? profile[0] : profile
   const bankName = bankProfile?.bank_name ?? '—'
   const accountNumber = bankProfile?.account_number ?? '—'
@@ -336,11 +339,38 @@ export default function TrackingPage() {
 
   useEffect(() => {
     const fetchOrder = async () => {
-      const { data } = await supabase
+      // Try the joined select first — the runner_profile join is nested
+      // through users to keep PostgREST happy (no direct FK from orders
+      // to runner_profiles).
+      let { data } = await supabase
         .from('orders')
-        .select('*, is_pre_order, runner_assigned_at, picked_up_at, restaurant:restaurants(name, avg_prep_time), runner:users!runner_id(full_name, phone), runner_profile:runner_profiles!runner_id(bank_name, account_number)')
+        .select('*, is_pre_order, runner_assigned_at, picked_up_at, restaurant:restaurants(name, avg_prep_time), runner:users!runner_id(full_name, phone, runner_profile:runner_profiles!user_id(bank_name, account_number))')
         .eq('id', id)
         .single()
+
+      // Fallback: if the joined query returned nothing (schema cache
+      // hasn't picked up runner_profiles → users relationship yet), fall
+      // back to a plain select + separate lookups.
+      if (!data) {
+        const { data: bare } = await supabase
+          .from('orders')
+          .select('*, is_pre_order, runner_assigned_at, picked_up_at, restaurant:restaurants(name, avg_prep_time)')
+          .eq('id', id)
+          .single()
+        if (bare) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const b = bare as any
+          if (b.runner_id) {
+            const [{ data: runnerUser }, { data: runnerProf }] = await Promise.all([
+              supabase.from('users').select('full_name, phone').eq('id', b.runner_id).single(),
+              supabase.from('runner_profiles').select('bank_name, account_number').eq('user_id', b.runner_id).single(),
+            ])
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            b.runner = { ...(runnerUser as any ?? {}), runner_profile: runnerProf }
+          }
+          data = bare
+        }
+      }
 
       if (data) {
         setOrder(data)

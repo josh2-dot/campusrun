@@ -1,80 +1,70 @@
-# Runner-Funded Direct-Pay — Escape + Bank Details Hotfix
+# Direct-Pay — Customer Tracking UX
 
-Two bugs from your screenshot. Both fixed.
+Fixes for the customer-facing tracking page when the order is runner-funded. The screen was showing "PREPARING · 3 min · ON TIME" which is copy borrowed from the restaurant_paid flow where a restaurant cooks the food. In runner-funded, there's no restaurant preparing anything for you — a runner walks in and buys off the shelf.
 
-## Bug 1: `\u20A6`, `\uD83D\uDCB8` etc. rendering as literal text
+## What changes
 
-**Root cause:** JSX gotcha. Inside JSX text (between tags), `\uXXXX` is not treated as an escape sequence — it's just plain text. Escapes only work inside JS string literals (props, variables, template literals).
+Four adjustments, all in `app/track/[id]/page.tsx`:
 
-**What I wrote (broken):**
-```jsx
-<span>\u20A6{amount.toLocaleString()}</span>  // ❌ prints "\u20A61,000"
+### 1. ETA computation branches on `payment_model`
+
+Old:
+```
+runner_assigned_at set → label = 'Preparing', arriveAt = assigned + prep + 3min
 ```
 
-**What it should be:**
-```jsx
-<span>₦{amount.toLocaleString()}</span>       // ✅ prints "₦1,000"
+New:
+```
+runner_funded + awaiting_payment  → 'Send payment', no countdown
+runner_funded + payment_confirmed → 'Buying your food', ~25min rough estimate
+restaurant_paid + runner_assigned  → 'Preparing' (unchanged)
 ```
 
-Fixed everywhere it appeared as JSX text or template-literal text:
-- `app/track/[id]/page.tsx` (SendPaymentCard) — 5 escapes replaced
-- `app/order/[id]/page.tsx` (direct-pay card, refund sheet, step icons) — 13 escapes replaced
-- `app/api/runner/accept/route.ts` (SMS + push message bodies) — 12 escapes replaced
+The 25-min estimate for `payment_confirmed` breaks down as: 5 min to restaurant + 10 min to buy + 10 min to deliver. Rough, so it prefixes with "est." and the "ON TIME / RUNNING LATE" pill doesn't render for it (that pill is precise-ETA-only).
 
-All replaced with literal ₦, 💸, 📞, 📦, 🛵, 🏪, 🏁, —, ✓, ✅, ✉ etc.
+### 2. Header hides the countdown when it'd be misleading
 
-## Bug 2: Bank name + account number showing "—" dashes
+For `runner_funded_awaiting_payment`: the SendPaymentCard has its own 20-min countdown to the payment deadline. Adding a second countdown at the top of the page competes with it and confuses. Now the header shows a clean "Send payment to your runner" line with no minutes.
 
-**Root cause:** The customer's track page was fetching runner_profiles client-side. RLS correctly blocks a customer from reading another user's bank details from that table. My select returned null silently, the SendPaymentCard fell back to its `—` placeholder.
+### 3. Better status label for `payment_confirmed`
 
-**Why the accept flow still worked:** the accept route uses `createAdminClient()` (service role, bypasses RLS), so the preflight bank-details check succeeded and the runner was allowed to accept. But the customer-side client can't see them.
+"Runner is on it" was too vague. Customer needs to understand the runner is going to a restaurant to buy their food — not that food is already being prepared.
 
-**Fix:** new server-side endpoint `GET /api/orders/[id]/runner-bank` that:
-- Verifies the caller is the customer on this order
-- Verifies the order is in `runner_funded_awaiting_payment` state
-- Returns just `full_name, phone, bank_name, account_number` to the caller
+`runner_funded_payment_confirmed` → **"Runner buying your food"**
 
-The track page now calls this endpoint instead of hitting `runner_profiles` directly.
+### 4. Progress bar step for `awaiting_payment`
 
-**Gate is strict:** bank details are only returned while the order is in `awaiting_payment`. After the runner confirms receipt, the endpoint returns 409. This is intentional — no reason to keep exposing bank details after payment is done.
+Was mapped to step 2 (On the way). But nothing's moving yet — the runner is waiting for the customer to pay. Now maps to step 1 (Confirmed), same as `awaiting_runner`. Progress advances to step 2 only when the runner has actually started doing something (payment confirmed, going to buy).
 
-## Files (3)
+## What the customer will now see
 
-| Path | Change |
-|---|---|
-| `app/api/orders/[id]/runner-bank/route.ts` | **NEW.** Server endpoint that gates access to runner bank details |
-| `app/track/[id]/page.tsx` | Fetches bank details from the new endpoint + all escape sequences replaced with real characters |
-| `app/order/[id]/page.tsx` | All escape sequences replaced |
-| `app/api/runner/accept/route.ts` | Escape sequences in push/SMS bodies replaced |
+| State | Header (large) | Subhead | Progress bar |
+|---|---|---|---|
+| `awaiting_runner` | "Finding a runner…" | (empty) | Step 1 |
+| `runner_funded_awaiting_payment` | "Send payment to your runner" | "From Madam Joe" | Step 1 |
+| `runner_funded_payment_confirmed` | "**est. ~25 min**" + "Runner buying your food · **Madam Joe**" | | Step 2 |
+| `picked_up` | "**~10 min**" ON TIME · "Out for delivery" | | Step 2 |
+| `delivered` | "Delivered!" | | Step 3 |
 
 ## Install
 
-Overlay all 4 files. Restart. `npx tsc --noEmit` clean.
+1 file, no migration.
 
-No migration, no env changes.
+- `app/track/[id]/page.tsx`
 
-## Verify
+Overlay, restart. `npx tsc --noEmit` clean.
 
-1. Place a new runner-funded order.
-2. Have runner accept.
-3. Customer's track page should now show:
-   - Big **₦** with the correct amount (not `\u20A61,000`)
-   - The runner's actual **bank name** (e.g., "Opay", "Kuda Bank")
-   - The runner's actual **account number** in monospace
-   - Real emojis for the header + Call button
-4. If bank details still show `—`, the runner literally has no bank details on `runner_profiles`. Check:
-   ```sql
-   SELECT user_id, bank_name, account_number
-   FROM runner_profiles
-   WHERE user_id = '<runner-id-from-order>';
-   ```
-   If bank_name and account_number are null, the runner needs to save them via Profile → Payout account. My accept preflight should have blocked them; if it didn't, that's a separate bug.
+## Reality check about the "3 min" you saw
 
-## Note on Unicode in TypeScript files
+The "3 min" specifically was the old code computing:
+```
+arriveAt = runner_assigned_at + prep(15) + 3 = 18 minutes after assignment
+now = 15 minutes after assignment
+remaining = 18 - 15 = 3 minutes
+```
 
-The escape-sequence bug is deeply my fault — I habitually write `\u20A6` in strings assuming JS treats it as an escape everywhere. It doesn't inside JSX children. Two ways to avoid this in future:
+Meaningless for runner-funded — nothing was actually happening at Madam Joe. The runner had just accepted, and any minute now had to walk to Madam Joe and buy the malt. New copy sets expectations closer to reality.
 
-1. **Use the actual character** — `₦`, `💸`, `—` etc. Modern editors and TypeScript handle Unicode fine.
-2. **If you need to escape** (e.g., for terminal-hostile source control), wrap in a JS expression: `<span>{'\u20A6'}{amount}</span>`
+## Next thing worth doing (not in this bundle)
 
-I'll stick to (1) going forward.
+The runner's `/order/[id]` page needs similar language work. Currently the flow after payment_confirmed uses restaurant_paid copy — "Head to restaurant", "Pick up the food". For runner-funded it's more like "Go buy the malt from Madam Joe", "Grab the food, head to the customer". Small tweaks, worth doing separately.

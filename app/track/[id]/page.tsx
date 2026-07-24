@@ -19,8 +19,8 @@ function statusToStep(status: string): number {
     case 'pending':          return 0
     case 'confirmed':        return 1
     case 'awaiting_runner':  return 1
+    case 'runner_funded_awaiting_payment':  return 1
     case 'runner_assigned':  return 2
-    case 'runner_funded_awaiting_payment':  return 2
     case 'runner_funded_payment_confirmed': return 2
     case 'preparing':        return 2
     case 'picked_up':        return 2
@@ -35,7 +35,7 @@ function statusLabel(s: string) {
   if (s === 'needs_attention')                       return 'Finding runner'
   if (s === 'awaiting_runner')                       return 'Finding a runner…'
   if (s === 'runner_funded_awaiting_payment')        return 'Send payment to your runner'
-  if (s === 'runner_funded_payment_confirmed')       return 'Runner is on it'
+  if (s === 'runner_funded_payment_confirmed')       return 'Runner buying your food'
   if (s === 'runner_assigned' || s === 'preparing') return 'Runner is on it'
   if (s === 'picked_up')                             return 'Out for delivery'
   return 'Order placed'
@@ -387,18 +387,37 @@ export default function TrackingPage() {
     if (!order) return null
     const rest = order.restaurant as { name?: string; avg_prep_time?: number } | null
     const prep = rest?.avg_prep_time ?? 15
-    const o = order as Order & { runner_assigned_at?: string; picked_up_at?: string }
+    const o = order as Order & { runner_assigned_at?: string; picked_up_at?: string; payment_model?: string; runner_funded_payment_confirmed_at?: string }
+    const isRf = o.payment_model === 'runner_funded'
 
     let arriveAt: number
     let label: string
     let isRough = false
+    // When true, header shows only the label — no minute countdown.
+    // Used for states where a countdown would mislead (e.g. waiting for
+    // the customer to send payment).
+    let hideCountdown = false
 
     if (o.picked_up_at) {
-      // Runner has food — 10 min campus delivery
+      // Same for both flows — runner has food, ~10 min campus delivery
       arriveAt = new Date(o.picked_up_at).getTime() + 10 * 60_000
       label = 'Delivering'
-    } else if (o.runner_assigned_at) {
-      // Runner assigned — prep + 3 min travel to restaurant
+    } else if (isRf && order.status === 'runner_funded_awaiting_payment') {
+      // Direct-pay: SendPaymentCard has its own deadline countdown.
+      // Don't compete with it in the header.
+      arriveAt = now
+      label = 'Send payment'
+      hideCountdown = true
+    } else if (isRf && order.status === 'runner_funded_payment_confirmed') {
+      // Runner is going to the restaurant to BUY food — no restaurant
+      // prep involved. Rough estimate: 5 min to restaurant + 10 min to
+      // buy + 10 min to deliver.
+      const base = o.runner_funded_payment_confirmed_at ?? o.runner_assigned_at ?? order.created_at
+      arriveAt = new Date(base).getTime() + 25 * 60_000
+      label = 'Buying your food'
+      isRough = true
+    } else if (o.runner_assigned_at && !isRf) {
+      // Restaurant_paid: prep + 3 min travel to restaurant
       arriveAt = new Date(o.runner_assigned_at).getTime() + (prep + 3) * 60_000
       label = 'Preparing'
     } else {
@@ -409,7 +428,7 @@ export default function TrackingPage() {
     }
 
     const remaining = Math.max(0, Math.round((arriveAt - now) / 60_000))
-    return { remainingMin: remaining, label, isRough }
+    return { remainingMin: remaining, label, isRough, hideCountdown }
   }, [order, now])
 
   async function cancelOrder(reason: string) {
@@ -521,6 +540,12 @@ export default function TrackingPage() {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
               {awaitingRunner ? (
                 <span className="font-display" style={{ fontSize: 28, color: 'white' }}>Finding a runner…</span>
+              ) : eta?.hideCountdown ? (
+                // Runner-funded awaiting_payment: SendPaymentCard owns the
+                // countdown. Show a clean status line here instead.
+                <span className="font-display" style={{ fontSize: 24, color: 'white', lineHeight: 1.15 }}>
+                  {statusLabel(order.status)}
+                </span>
               ) : (
                 <>
                   {eta?.isRough && <span className="font-display" style={{ fontSize: 16, color: 'var(--ink-3, #6B6660)', marginRight: 2 }}>est.</span>}
@@ -528,13 +553,16 @@ export default function TrackingPage() {
                   <span className="font-display" style={{ fontSize: 18, color: 'white' }}>min</span>
                 </>
               )}
-              {!awaitingRunner && !eta?.isRough && ((eta?.remainingMin ?? 1) > 0
+              {!awaitingRunner && !eta?.hideCountdown && !eta?.isRough && ((eta?.remainingMin ?? 1) > 0
                 ? <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><span className="dot" />ON TIME</span>
                 : <span className="pill pill-warn" style={{ marginLeft: 'auto' }}>RUNNING LATE</span>
               )}
             </div>
             <p style={{ fontSize: 13, color: 'var(--ink-2, #A09A8E)', fontWeight: 600, margin: '6px 0 0' }}>
-              {statusLabel(order.status)}{restaurant ? <> · <b style={{ color: 'white', fontWeight: 800 }}>{restaurant.name}</b></> : null}
+              {eta?.hideCountdown
+                ? (restaurant ? <>From <b style={{ color: 'white', fontWeight: 800 }}>{restaurant.name}</b></> : null)
+                : <>{statusLabel(order.status)}{restaurant ? <> · <b style={{ color: 'white', fontWeight: 800 }}>{restaurant.name}</b></> : null}</>
+              }
             </p>
           </>
         )}

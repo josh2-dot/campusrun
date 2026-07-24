@@ -129,7 +129,7 @@ function RefundSheet({ onConfirm, onClose, refunding }: {
             className="press"
             style={{ flex: 1, background: reason && !refunding ? '#FF3B30' : '#2A2825', color: 'white', fontWeight: 800, fontSize: 14, padding: 14, borderRadius: 12, border: 'none', cursor: reason && !refunding ? 'pointer' : 'not-allowed', fontFamily: 'inherit', minHeight: 48 }}
           >
-            {refunding ? 'Confirming\u2026' : "I've sent the refund"}
+            {refunding ? 'Confirming…' : "I've sent the refund"}
           </button>
         </div>
       </div>
@@ -282,14 +282,14 @@ export default function RunnerOrderPage() {
   const platformOwed       = orderX.platform_owed_amount ?? 0
 
   const steps = isRunnerFunded ? [
-    { status: 'runner_funded_awaiting_payment',  label: 'Wait for customer payment', sub: 'Check your bank alert', icon: '\uD83D\uDCB8' },
-    { status: 'runner_funded_payment_confirmed', label: 'Buy from restaurant', sub: restaurant?.name ?? '', icon: '\uD83C\uDFEA' },
-    { status: 'picked_up', label: 'Head to customer', sub: 'Tap below once you have the food', icon: '\uD83D\uDCE6' },
-    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '\uD83C\uDFC1' },
+    { status: 'runner_funded_awaiting_payment',  label: 'Wait for customer payment', sub: 'Check your bank alert', icon: '💸' },
+    { status: 'runner_funded_payment_confirmed', label: 'Buy from restaurant', sub: restaurant?.name ?? '', icon: '🏪' },
+    { status: 'picked_up', label: 'Head to customer', sub: 'Tap below once you have the food', icon: '📦' },
+    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '🏁' },
   ] : [
-    { status: 'runner_assigned', label: 'Head to restaurant', sub: restaurant?.name ?? '', icon: '\uD83C\uDFEA' },
-    { status: 'picked_up', label: 'Pick up the food', sub: 'Tap below when you have it', icon: '\uD83D\uDCE6' },
-    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '\uD83C\uDFC1' },
+    { status: 'runner_assigned', label: 'Head to restaurant', sub: restaurant?.name ?? '', icon: '🏪' },
+    { status: 'picked_up', label: 'Pick up the food', sub: 'Tap below when you have it', icon: '📦' },
+    { status: 'delivered', label: 'Deliver to customer', sub: customer?.full_name ?? '', icon: '🏁' },
   ]
   const STATUS_ORDER = isRunnerFunded
     ? ['runner_funded_awaiting_payment', 'runner_funded_payment_confirmed', 'picked_up', 'delivered']
@@ -392,7 +392,7 @@ export default function RunnerOrderPage() {
                 className="press"
                 style={{ width: '100%', marginTop: 14, background: confirmingPayment ? '#0D7A38' : '#1DB954', color: 'white', fontWeight: 900, fontSize: 15, padding: 16, borderRadius: 14, border: 'none', cursor: confirmingPayment ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: confirmingPayment ? 0.7 : 1, minHeight: 52 }}
               >
-                {confirmingPayment ? 'Confirming\u2026' : '\u2713 I received the payment'}
+                {confirmingPayment ? 'Confirming…' : '✓ I received the payment'}
               </button>
             )}
 

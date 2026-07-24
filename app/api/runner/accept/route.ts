@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     if (customerPayment > RUNNER_FUNDED_PER_ORDER_CAP_NAIRA) {
       return NextResponse.json({
         success: false,
-        error: `Order value (\u20A6${customerPayment.toLocaleString()}) exceeds runner-funded cap of \u20A6${RUNNER_FUNDED_PER_ORDER_CAP_NAIRA.toLocaleString()}. Skip this one.`,
+        error: `Order value (₦${customerPayment.toLocaleString()}) exceeds runner-funded cap of ₦${RUNNER_FUNDED_PER_ORDER_CAP_NAIRA.toLocaleString()}. Skip this one.`,
         code: 'OVER_CAP',
       }, { status: 400 })
     }
@@ -211,14 +211,14 @@ export async function POST(request: NextRequest) {
   // ── Notifications ────────────────────────────────────────────────
   if (isRunnerFunded) {
     await sendPushToUser(order.customer_id, {
-      title: '\uD83D\uDCB8 Send payment to your runner',
-      body: `${profile.full_name} is ready. Send \u20A6${(updates.runner_funded_payment_expected_amount).toLocaleString()} to their account to complete the order.`,
+      title: '💸 Send payment to your runner',
+      body: `${profile.full_name} is ready. Send ₦${(updates.runner_funded_payment_expected_amount).toLocaleString()} to their account to complete the order.`,
       url: `/track/${orderId}`,
       tag: 'send-payment',
     })
 
     if (process.env.ADMIN_PHONE && process.env.TERMII_API_KEY) {
-      const msg = `\uD83D\uDCB8 Runner-funded accepted\nOrder: ${order.order_ref}\nRunner: ${profile.full_name}\nCustomer to send: \u20A6${(updates.runner_funded_payment_expected_amount).toLocaleString()}\nOwes platform: \u20A6${updates.platform_owed_amount}`
+      const msg = `💸 Runner-funded accepted\nOrder: ${order.order_ref}\nRunner: ${profile.full_name}\nCustomer to send: ₦${(updates.runner_funded_payment_expected_amount).toLocaleString()}\nOwes platform: ₦${updates.platform_owed_amount}`
       await fetch('https://api.ng.termii.com/api/sms/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
     }
   } else {
     await sendPushToUser(order.customer_id, {
-      title: '\uD83D\uDEF5 Runner on the way!',
+      title: '🛵 Runner on the way!',
       body: `${profile.full_name} is heading to ${restaurantName} for your order`,
       url: `/track/${orderId}`,
       tag: 'runner-assigned',

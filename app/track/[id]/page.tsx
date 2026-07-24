@@ -33,7 +33,7 @@ function statusLabel(s: string) {
   if (s === 'delivered')                              return 'Delivered!'
   if (s === 'cancelled')                             return 'Cancelled'
   if (s === 'needs_attention')                       return 'Finding runner'
-  if (s === 'awaiting_runner')                       return 'Finding a runner\u2026'
+  if (s === 'awaiting_runner')                       return 'Finding a runner…'
   if (s === 'runner_funded_awaiting_payment')        return 'Send payment to your runner'
   if (s === 'runner_funded_payment_confirmed')       return 'Runner is on it'
   if (s === 'runner_assigned' || s === 'preparing') return 'Runner is on it'
@@ -124,8 +124,8 @@ function SendPaymentCard({ order, runner }: {
 
   const bank = runner.runner_profile
   const bankProfile = Array.isArray(bank) ? bank[0] : bank
-  const bankName = bankProfile?.bank_name ?? '\u2014'
-  const accountNumber = bankProfile?.account_number ?? '\u2014'
+  const bankName = bankProfile?.bank_name ?? '—'
+  const accountNumber = bankProfile?.account_number ?? '—'
   const amount = order.runner_funded_payment_expected_amount ?? 0
   const deadline = order.runner_funded_payment_deadline
 
@@ -161,7 +161,7 @@ function SendPaymentCard({ order, runner }: {
       padding: 16,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,184,0,0.15)', border: '1px solid rgba(255,184,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>\uD83D\uDCB8</div>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,184,0,0.15)', border: '1px solid rgba(255,184,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>💸</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="label-cap" style={{ color: '#FFB800', margin: 0, fontSize: 10 }}>Send payment to your runner</p>
           <p style={{ color: 'white', fontWeight: 800, fontSize: 14, margin: '2px 0 0' }}>{runner.full_name} is waiting</p>
@@ -171,13 +171,13 @@ function SendPaymentCard({ order, runner }: {
       <div style={{ background: 'rgba(0,0,0,0.35)', borderRadius: 12, padding: 14, marginBottom: 10 }}>
         <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Amount to send</p>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
-          <span className="font-display" style={{ fontSize: 32, color: 'white', fontWeight: 900, lineHeight: 1 }}>\u20A6{amount.toLocaleString()}</span>
+          <span className="font-display" style={{ fontSize: 32, color: 'white', fontWeight: 900, lineHeight: 1 }}>₦{amount.toLocaleString()}</span>
           <button
             onClick={() => copy(String(amount), 'amount')}
             className="press"
             style={{ marginLeft: 'auto', background: 'rgba(255,184,0,0.15)', color: '#FFB800', border: '1px solid rgba(255,184,0,0.3)', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', minHeight: 32 }}
           >
-            {copied === 'amount' ? '\u2713 Copied' : 'Copy'}
+            {copied === 'amount' ? '✓ Copied' : 'Copy'}
           </button>
         </div>
       </div>
@@ -192,7 +192,7 @@ function SendPaymentCard({ order, runner }: {
             className="press"
             style={{ background: 'rgba(255,184,0,0.15)', color: '#FFB800', border: '1px solid rgba(255,184,0,0.3)', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', minHeight: 32 }}
           >
-            {copied === 'account' ? '\u2713 Copied' : 'Copy'}
+            {copied === 'account' ? '✓ Copied' : 'Copy'}
           </button>
         </div>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 700, margin: '8px 0 0' }}>Account name: <span style={{ color: 'white' }}>{runner.full_name}</span></p>
@@ -210,13 +210,13 @@ function SendPaymentCard({ order, runner }: {
             {isExpired ? 'Payment window expired' : 'Send within'}
           </span>
           <span className="font-display" style={{ color: isExpired ? '#FF3B30' : '#FFB800', fontSize: 18, fontWeight: 900, fontFamily: 'monospace' }}>
-            {countdown === 'expired' ? '\u2014' : countdown}
+            {countdown === 'expired' ? '—' : countdown}
           </span>
         </div>
       )}
 
       <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
-        Send exactly \u20A6{amount.toLocaleString()} to the account above from any bank app. Your runner will confirm once it lands \u2014 usually 1\u20132 minutes.
+        Send exactly ₦{amount.toLocaleString()} to the account above from any bank app. Your runner will confirm once it lands — usually 1–2 minutes.
       </p>
 
       {runner.phone && (
@@ -225,7 +225,7 @@ function SendPaymentCard({ order, runner }: {
           className="press"
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, background: 'rgba(29,185,84,0.12)', color: '#1DB954', fontWeight: 800, fontSize: 13, padding: '12px', borderRadius: 12, border: '1px solid rgba(29,185,84,0.28)', textDecoration: 'none', minHeight: 44 }}
         >
-          \uD83D\uDCDE Call {runner.full_name}
+          📞 Call {runner.full_name}
         </a>
       )}
     </div>
@@ -325,20 +325,33 @@ export default function TrackingPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const orderRow = data as any
 
-      // For runner-funded direct-pay flow, we need the runner's bank
-      // details. Fetch separately — no PostgREST FK from orders to
-      // runner_profiles.
-      if (orderRow.runner_id && orderRow.payment_model === 'runner_funded') {
-        const { data: bankRow } = await supabase
-          .from('runner_profiles')
-          .select('bank_name, account_number')
-          .eq('user_id', orderRow.runner_id)
-          .maybeSingle()
-        if (bankRow) {
-          // Attach bank details to the runner object for the card
-          if (orderRow.runner && typeof orderRow.runner === 'object') {
-            orderRow.runner.runner_profile = bankRow
+      // For runner-funded direct-pay: fetch runner's bank details via a
+      // server-side endpoint. Direct client-side reads against
+      // runner_profiles are RLS-blocked (customers can't enumerate runner
+      // bank info). The endpoint gates access to the customer on this
+      // specific order.
+      if (orderRow.runner_id && orderRow.payment_model === 'runner_funded' &&
+          orderRow.status === 'runner_funded_awaiting_payment') {
+        try {
+          const res = await fetch(`/api/orders/${id}/runner-bank`)
+          if (res.ok) {
+            const bank = await res.json()
+            // Attach to the runner object for the SendPaymentCard
+            orderRow.runner = {
+              ...(orderRow.runner ?? {}),
+              full_name: bank.full_name,
+              phone: bank.phone ?? orderRow.runner?.phone,
+              runner_profile: {
+                bank_name: bank.bank_name,
+                account_number: bank.account_number,
+              },
+            }
+          } else {
+            const err = await res.json().catch(() => ({}))
+            console.warn('[track] runner-bank fetch failed:', res.status, err.error)
           }
+        } catch (e) {
+          console.warn('[track] runner-bank fetch threw:', e)
         }
       }
 
